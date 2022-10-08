@@ -7,7 +7,7 @@ date: "2022-08-15"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-pacman::p_load(tidyverse, brms, ids, rstan, tidybayes, conflicted)
+pacman::p_load(tidyverse, brms, ids, rstan, tidybayes, conflicted, broom.mixed)
 
 conflict_scout()
 conflict_prefer('ar', 'brms')
@@ -116,18 +116,16 @@ gg_real_mlu
 #to_do list:
   # - might be more suitable to use something else than the normal distirubtion for the error
   # - understand the log normal distribution mathematically more
-  # - transform the p tibble so that it makes sense parameter = c(intercept, beta, sigma), mean, sd. Then it is easy to do the next point
-  # - you can try to make the mutate in the p a general function instead of doing it separately for each 
-          #map2 maybe!!!     or this          p[, grep("intercept_mu", colnames(p)) + 1]
   # - understand why the prior check gets such a crazily wide scale
   # - find a way to could find the number of parameters for which the effective samples were below 0.1 of the total sample number
   # - after simulating the data make another summary table with the mean difference between both groups for each visit
+# ***- try to make the posterior-prior update checks with gather_draws with regex = T parameter (might be way nicer)
 
 # Questions:
 #   - why does the prior pp_check show negative predictions???
 
-log_mu <- function(.mean, .sd) {log(.mean^2 / sqrt(.mean^2 + .sd^2))}
-log_sd <- function(.mean, .sd) {sqrt(log(1 + (.sd^2 / .mean^2)))}
+log_mu <- function(mean, sd) {log(mean^2 / sqrt(mean^2 + sd^2))}
+log_sd <- function(mean, sd) {sqrt(log(1 + (sd^2 / mean^2)))}
 
 
 p <- tibble(parameter = c('intercept', 'slope', 'error') %>% rep(2),
@@ -145,6 +143,7 @@ head(p)
 ```
 ### Simulating the data
 ```{r}
+
 # n - the number of participants in each condition
 
 
@@ -152,7 +151,7 @@ simulate_data <- function(seed, n){
 
   set.seed(seed)
   
-  .df <- tibble(id = seq(1, (n*2), by = 1) %>% as_factor) %>% 
+  df <- tibble(id = seq(1, (n*2), by = 1) %>% as_factor) %>% 
     mutate(diagnosis = rep(c('asd', 'td'), each = n) %>% as_factor) %>%
     slice(rep(seq_along(id), each = 6)) %>% 
     group_by(id) %>% 
@@ -172,7 +171,7 @@ simulate_data <- function(seed, n){
           e_mlu = t_mlu + rnorm(seq_along(n()), mean = p$mu[[3]], sd = p$sd[[3]])
           )
           
-  return(.df)
+  return(df)
 }
 
 sim_data <- simulate_data(1, 100)
@@ -186,6 +185,12 @@ glimpse(sim_data)
 sim_data %>% 
   group_by(diagnosis) %>% 
   summarise(across(starts_with('ind'), list(mean = mean, sd = sd), .names = '{.col}_{.fn}'))
+
+# "This would mean that on average the difference between ASD and TD participants is 0 at visit 1, 0.2 at visit 2, 0.4 at visit 3, 0.6 at visit 4, 0.8 at visit 5 and 1 at visit 6."
+
+sim_data %>% 
+  group_by(visit) %>% 
+  summarise(avg_diff = mean(e_mlu[diagnosis == 'td']) - mean(e_mlu[diagnosis == 'asd'])) #something might be wrong here as it is lower somehow
 ```
 
 
@@ -245,12 +250,14 @@ get_prior(fg,
 
 
 ```{r}
+head(p)
+
 priors <- c(
-  prior(normal(0, 0.1), class = b),
-  prior(normal(0.40, 0.1), class = b, coef = diagnosisasd),
-  prior(normal(0.40, 0.1), class = b, coef = diagnosistd),
-  prior(normal(0, 0.1), class = sd, coef = Intercept, group = id),
-  prior(normal(0, 0.2), class = sd, coef = visit, group = id)
+  prior(normal(0, 0.3), class = b),
+  prior(normal(0.40, 0.2), class = b, coef = diagnosisasd),
+  prior(normal(0.40, 0.2), class = b, coef = diagnosistd),
+  prior(normal(0, 0.5), class = sd, coef = Intercept, group = id),
+  prior(normal(0, 0.4), class = sd, coef = visit, group = id)
         )
 
 
@@ -260,16 +267,19 @@ priors <- c(
 
 
 ```{r}
-f_m_prior <- brm(
-  f, 
-  data = sim_data,
-  family = lognormal,
-  prior = priors,
-  sample_prior = 'only',
-  backend = 'cmdstanr',
-  cores = 3,
-  file = 'f_m_prior'
-)
+f_m_prior <- read_rds('f_m_prior.rds')
+
+
+#f_m_prior <- brm(
+#  f, 
+#  data = sim_data,
+#  family = lognormal,
+#  prior = priors,
+#  sample_prior = 'only',
+#  backend = 'cmdstanr',
+#  cores = 3,
+#  file = 'f_m_prior'
+#)
 ```
 ### Prior predictive checks:
 ```{r}
@@ -278,16 +288,18 @@ pp_check(f_m_prior, ndraws = 100)
 ```
 ### Fitting the model
 ```{r}
-f_m <- brm(
-  f, 
-  data = sim_data,
-  family = lognormal,
-  prior = priors,
-  sample_prior = TRUE,
-  backend = 'cmdstanr',
-  cores = 3,
-  file = 'f_m'
-)
+f_m <- read_rds('f_m.rds')
+
+#f_m <- brm(
+#  f, 
+#  data = sim_data,
+#  family = lognormal,
+#  prior = priors,
+#  sample_prior = TRUE,
+#  backend = 'cmdstanr',
+#  cores = 3,
+#  file = 'f_m'
+#)
 
 ```
 ### Model quality checks:
@@ -323,38 +335,151 @@ pp_check(f_m, ndraws = 100)
 
 #### Sensitivity analysis (prior-posterior updata checks):
 
-
-
-
-
-
-
 ```{r}
 
-pp_update_plot <- function(.fit, .priors){
-.index <- get_variables(f_m)
-.index <- .index[!str_starts(.index, 'r') &
-               grepl(x = .index, pattern = paste(.priors$class, collapse = '|'))]
-.df <- as_draws_df(x = .fit, variable = .index)
+pp_update_plot <- function(model, priors){
+index <- get_variables(f_m)
+index <- index[!str_starts(index, 'r') &
+               grepl(x = index, pattern = paste(priors$class, collapse = '|'))]
+df <- as_draws_df(x = model, variable = index)
 
-.gg_posteriors <- .df[, 1:6] %>% as.list
-.gg_priors <- .df[, 7:12] %>% as.list
-.gg_titles <- names(.gg_posteriors)
+gg_posteriors <- df[, 1:6] %>% as.list
+gg_priors <- df[, 7:12] %>% as.list
+gg_titles <- names(gg_posteriors)
 
 
-pmap(.l = list(.x = .gg_priors, .y = .gg_posteriors, .t = .gg_titles),
-     .f = function(.x, .y, .t){ggplot()+
-            geom_density(aes(.x, fill = 'steelblue'))+
-            geom_density(aes(.y, fill = '#FC4E07'))+
-            ggtitle(.t)}
+pmap(.l = list(.x = gg_priors, .y = gg_posteriors, .t = gg_titles),
+     .f = function(.x, .y, .t){
+       ggplot()+
+            geom_density(aes(.x, fill = 'steelblue', alpha = 0.5))+
+            geom_density(aes(.y, fill = '#FC4E07', alpha = 0.5))+
+            ggtitle(.t)+
+            theme_classic()+
+            guides(fill = F, alpha = F)}
 )
 }
 
-pp_update_plot(.fit = f_m, .priors = priors)
+pp_update_plot(model = f_m, priors = priors)
+```
+### Sensitivity analysis:
+```{r}
+priors
+priors[1, ]
+
+loop_sd <-  seq(0.1, 1.5, by = 0.1)
+loop_sd <- c(0.1, 0.9) #just to check it
+models_data <- tibble()
+
+
+models_data <- map_df(
+  .x = loop_sd,
+  .f = function(.x){
+  
+  new_priors <- priors
+  new_priors[1, ] <- set_prior(paste0("normal(0, ", .x ,")"), class = "b")
+    
+  model <- brm(
+    f, 
+    data = sim_data,
+    family = lognormal,
+    prior = new_priors,
+    sample_prior = TRUE,
+    backend = 'cmdstanr',
+    cores = 3)
+  
+  
+  models_data %>% 
+    rbind(gather_draws(model, c(`b_diagnosisasd:visit`, `b_diagnosistd:visit`)) %>% median_qi(.width = 0.95))
+  })
+
+# i have finished here
+
+map(.x = models_data %>% group_split(.variable), 
+    .f = ~ ggplot(data = .x, aes(x = loop_sd, y = .value)) +
+          geom_point(size = 3) +
+          geom_pointrange(ymin = .lower, ymax = .upper) +
+          ylim(-1.3, 0.3) +
+          labs(x="Standard Deviation of Slope Prior", 
+               y="Posterior Estimate for slope", 
+               title = "Sensitivity analysis for multi-level model")+
+          theme_bw() +
+          theme(plot.title = element_text(hjust = 0.5, size = 15),
+                axis.title.x = element_text(size = 13),
+                axis.text.y = element_text(size = 12),
+                axis.text.x = element_text(size = 12),
+                axis.title.y = element_text(size = 13))
+  )
+```
+
+
+```{r}
+
+
+
+
+
+
+
+
+
+#code to loop through sd of intercept prior:
+priSD <- seq(0.1, 1.5, length.out = 15)
+priorsN <- Articulation_p3
+#create empty sets to store output of the loop:
+post_pred <- c()
+post_pred_lci <- c()
+post_pred_uci <- c()
+for (i in 1:length(priSD)) {
+  priorsN[3,] <- set_prior(paste0("normal(0, ", priSD[i],")"), class = "b")
+  model_for_loop <- brm(Articulation_f3,
+                                     data   = d, 
+                                     family = gaussian, 
+                                     prior  = priorsN, 
+                                     sample_prior = T,
+                                     warmup = 1000, 
+                                     iter   = 5000, 
+                                     cores  = 2,
+                                     chains = 2,
+                                     backend = "cmdstanr",
+                                     threads = threading(2),
+                                     save_pars = save_pars(all = TRUE),
+                                     control = list(adapt_delta   = 0.99, 
+                                                    max_treedepth = 15))
+  
+  post_preds <- spread_draws(model_for_loop, b_RegisterIDS)
+  post_pred[i] <- median(post_preds$b_RegisterIDS)
+  post_pred_lci[i] <- quantile(post_preds$b_RegisterIDS, prob = 0.025)
+  post_pred_uci[i] <- quantile(post_preds$b_RegisterIDS, prob = 0.975)
+}
+
+models_data <- data.frame(priSD, post_pred, post_pred_lci, post_pred_uci)
+
+ggplot(data=models_data, aes(x=priSD, y=post_pred)) +
+  geom_point(size = 3) +
+  geom_pointrange(ymin = post_pred_lci, ymax = post_pred_uci) +
+  ylim(-1.3, 0.3) +
+  labs(x="Standard Deviation of Slope Prior", 
+       y="Posterior Estimate for slope", 
+       title="Sensitivity analysis for multi-level model") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, size = 15),
+        axis.title.x = element_text(size = 13),
+        axis.text.y = element_text(size = 12),
+        axis.text.x = element_text(size = 12),
+        axis.title.y = element_text(size = 13))
 ```
 ### Model exploration
 ```{r}
-f_m_s2 <- f_m %>% spread_draws(b_diagnosisasd)
+conditional_effects(f_m)
+```
+#### hypotheses testing
+```{r}
+hypothesis()
+```
+#### individual effects
+```{r}
+
+
 ```
 ### Model comparison
 ```{r}
@@ -362,7 +487,9 @@ f_m_s2 <- f_m %>% spread_draws(b_diagnosisasd)
 ```
 
 ## Power Analysis
+```{r}
 
+```
 ### NHST type 'significance' approach:
 ```{r}
 
