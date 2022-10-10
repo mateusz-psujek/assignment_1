@@ -13,7 +13,6 @@ conflict_scout()
 conflict_prefer('ar', 'brms')
 conflict_prefer('filter', 'dplyr')
 conflict_prefer('lag', 'dplyr')
-conflict_prefer('extract', 'rstan')
 ```
 
 # Assignment 1  - Language development in autistic and neurotypical children
@@ -119,6 +118,7 @@ gg_real_mlu
   # - understand why the prior check gets such a crazily wide scale
   # - find a way to could find the number of parameters for which the effective samples were below 0.1 of the total sample number
   # - after simulating the data make another summary table with the mean difference between both groups for each visit
+#  - make a plot of the real parameter values and model estimates
 # ***- try to make the posterior-prior update checks with gather_draws with regex = T parameter (might be way nicer)
 
 # Questions:
@@ -336,7 +336,6 @@ pp_check(f_m, ndraws = 100)
 #### Sensitivity analysis (prior-posterior updata checks):
 
 ```{r}
-
 pp_update_plot <- function(model, priors){
 index <- get_variables(f_m)
 index <- index[!str_starts(index, 'r') &
@@ -347,7 +346,6 @@ gg_posteriors <- df[, 1:6] %>% as.list
 gg_priors <- df[, 7:12] %>% as.list
 gg_titles <- names(gg_posteriors)
 
-
 pmap(.l = list(.x = gg_priors, .y = gg_posteriors, .t = gg_titles),
      .f = function(.x, .y, .t){
        ggplot()+
@@ -356,125 +354,116 @@ pmap(.l = list(.x = gg_priors, .y = gg_posteriors, .t = gg_titles),
             ggtitle(.t)+
             theme_classic()+
             guides(fill = F, alpha = F)}
-)
-}
+)}
 
 pp_update_plot(model = f_m, priors = priors)
 ```
 ### Sensitivity analysis:
 ```{r}
-priors
-priors[1, ]
-
 loop_sd <-  seq(0.1, 1.5, by = 0.1)
 loop_sd <- c(0.1, 0.9) #just to check it
 models_data <- tibble()
 
 
-models_data <- map_df(
-  .x = loop_sd,
-  .f = function(.x){
-  
-  new_priors <- priors
-  new_priors[1, ] <- set_prior(paste0("normal(0, ", .x ,")"), class = "b")
+# models_data <- map_df(
+#  .x = loop_sd,
+#  .f = function(.x){
+#  
+#  new_priors <- priors
+#  new_priors[1, ] <- set_prior(paste0("normal(0, ", .x ,")"), class = "b")
     
-  model <- brm(
-    f, 
-    data = sim_data,
-    family = lognormal,
-    prior = new_priors,
-    sample_prior = TRUE,
-    backend = 'cmdstanr',
-    cores = 3)
+#  model <- brm(
+#    f, 
+#    data = sim_data,
+#    family = lognormal,
+#    prior = new_priors,
+#    sample_prior = TRUE,
+#    backend = 'cmdstanr',
+#    cores = 3)
   
   
-  models_data %>% 
-    rbind(gather_draws(model, c(`b_diagnosisasd:visit`, `b_diagnosistd:visit`)) %>% median_qi(.width = 0.95))
-  })
+#  models_data %>% 
+#    rbind(gather_draws(model, c(`b_diagnosisasd:visit`, `b_diagnosistd:visit`)) %>% median_qi(.width = 0.95))
+#  })
 
-# i have finished here
 
-map(.x = models_data %>% group_split(.variable), 
+#write_rds(models_data, 'models_data.rds')
+
+models_data <- read_rds('models_data.Rds')
+
+
+map(.x = models_data %>% group_split(.variable),
     .f = ~ ggplot(data = .x, aes(x = loop_sd, y = .value)) +
-          geom_point(size = 3) +
-          geom_pointrange(ymin = .lower, ymax = .upper) +
-          ylim(-1.3, 0.3) +
-          labs(x="Standard Deviation of Slope Prior", 
-               y="Posterior Estimate for slope", 
-               title = "Sensitivity analysis for multi-level model")+
-          theme_bw() +
-          theme(plot.title = element_text(hjust = 0.5, size = 15),
-                axis.title.x = element_text(size = 13),
-                axis.text.y = element_text(size = 12),
-                axis.text.x = element_text(size = 12),
-                axis.title.y = element_text(size = 13))
+            geom_point(size = 3) +
+            geom_pointrange(aes(ymin = .lower, ymax = .upper)) +
+            ylim(0.1, 0.3) +
+            labs(x="Standard Deviation of Slope Prior", 
+                 y="Posterior Estimate for slope", 
+                 title = paste0("'", .x$.variable, "'"),
+                 subtitle = "Sensitivity analysis for multi-level model") +
+            theme_bw() +
+            theme(plot.title = element_text(hjust = 0.5, size = 15),
+                  axis.title.x = element_text(size = 13),
+                  axis.text.y = element_text(size = 12),
+                  axis.text.x = element_text(size = 12),
+                  axis.title.y = element_text(size = 13))
+
   )
-```
-
-
-```{r}
-
-
-
-
-
-
-
-
-
-#code to loop through sd of intercept prior:
-priSD <- seq(0.1, 1.5, length.out = 15)
-priorsN <- Articulation_p3
-#create empty sets to store output of the loop:
-post_pred <- c()
-post_pred_lci <- c()
-post_pred_uci <- c()
-for (i in 1:length(priSD)) {
-  priorsN[3,] <- set_prior(paste0("normal(0, ", priSD[i],")"), class = "b")
-  model_for_loop <- brm(Articulation_f3,
-                                     data   = d, 
-                                     family = gaussian, 
-                                     prior  = priorsN, 
-                                     sample_prior = T,
-                                     warmup = 1000, 
-                                     iter   = 5000, 
-                                     cores  = 2,
-                                     chains = 2,
-                                     backend = "cmdstanr",
-                                     threads = threading(2),
-                                     save_pars = save_pars(all = TRUE),
-                                     control = list(adapt_delta   = 0.99, 
-                                                    max_treedepth = 15))
-  
-  post_preds <- spread_draws(model_for_loop, b_RegisterIDS)
-  post_pred[i] <- median(post_preds$b_RegisterIDS)
-  post_pred_lci[i] <- quantile(post_preds$b_RegisterIDS, prob = 0.025)
-  post_pred_uci[i] <- quantile(post_preds$b_RegisterIDS, prob = 0.975)
-}
-
-models_data <- data.frame(priSD, post_pred, post_pred_lci, post_pred_uci)
-
-ggplot(data=models_data, aes(x=priSD, y=post_pred)) +
-  geom_point(size = 3) +
-  geom_pointrange(ymin = post_pred_lci, ymax = post_pred_uci) +
-  ylim(-1.3, 0.3) +
-  labs(x="Standard Deviation of Slope Prior", 
-       y="Posterior Estimate for slope", 
-       title="Sensitivity analysis for multi-level model") +
-  theme_bw() +
-  theme(plot.title = element_text(hjust = 0.5, size = 15),
-        axis.title.x = element_text(size = 13),
-        axis.text.y = element_text(size = 12),
-        axis.text.x = element_text(size = 12),
-        axis.title.y = element_text(size = 13))
 ```
 ### Model exploration
 ```{r}
 conditional_effects(f_m)
 ```
+
+
+```{r}
+# comparing model estimates with the true generative process
+
+est <- rbind(f_m %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
+             f_m %>% gather_draws(`sd_.*`, regex = T) %>% mean_qi) %>% 
+  select(!c(.variable, .point, .interval)) %>% 
+  rename_with(.cols = everything(), ~ paste0("est_", .x))
+est <-rbind(est, est %>% slice(c(5,6)))
+
+
+t_value <- p %>% ungroup %>% filter(!parameter == 'error')
+t_value <- rbind(t_value %>% select(mu_log) %>% rename('t_value' = mu_log),
+                 t_value %>% select(sd_log) %>% rename('t_value' = sd_log))
+
+t_vs_est <- tibble(term = 
+                    map2_chr(.x = rep(c('mu','sd'), each = 4),
+                           .y = rep(c('intercept', 'slope'), times = 4),
+                           .f = ~ paste0(.x, '_', .y)),
+                   diagnosis = rep(c('asd', 'asd', 'td', 'td'), times = 2),
+                   t_value,
+                   est) %>% 
+  rename_with(.cols = everything(), .fn = ~ str_remove_all(.x, fixed('.')))
+
+head(t_vs_est)
+
+
+rm(est, t_value)
+
+map(.x = t_vs_est %>% group_split(term),
+    .f = ~ 
+      ggplot(.x, aes(y = est_value, x = diagnosis, color = diagnosis)) +
+        geom_hline(aes(yintercept = t_value, color = diagnosis)) +
+        geom_point(size = 3) +
+        geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
+        labs(title = paste0("'", .x$term, "'"),
+             subtitle = "True value vs. model estimate",
+             y = "True value",
+             x = "Estimated value by diagnosis") +
+        theme_bw() +
+        theme(axis.text.x = element_blank())
+    )
+      
+
+```
+
 #### hypotheses testing
 ```{r}
-hypothesis()
+hypothesis(f_m, `b_diagnosistd:visit` > `b_diagnosisasd:visit`)
 ```
 #### individual effects
 ```{r}
