@@ -361,10 +361,6 @@ i[grepl("prior_sd", i, fixed = TRUE)]
 For some reason, in the case of varying slopes by diagnosis the prior function seems to automatically only set the standard deviation priors for the 'ASD' diagnosis and not the 'TD' diagnosis.
 From what we managed to find only the possibility of setting the priors separately for each group in gr(by = x) might be an open issue in brms (https://github.com/paul-buerkner/brms/issues/874). Because of that we only made prior - posterior plots for the 'ASD' group.
 ```{r}
-df <- left_join(spread_draws(fg_m, `.*b_.*`, regex = TRUE),
-             spread_draws(fg_m, `.*sd_.*`, regex = TRUE)) %>% 
-  select(-any_of(c("sd_id__Intercept:diagnosistd", "sd_id__visit:diagnosistd")))
-  select(-any_of(c(`sd_id__Intercept:diagnosistd`, `sd_id__visit:diagnosistd`)))
 
 pp_update_plot <- function(model, priors){
 
@@ -400,7 +396,6 @@ pp_update_plot(fg_m, priors)
 ```
 ### Sensitivity analysis:
 ```{r}
-
 sds <-  seq(0.1, 1.5, by = 0.1)
 sds <- c(0.1, 0.9) #just to check it, REMOVE later
 
@@ -450,8 +445,15 @@ map(.x = models_data %>% group_split(.variable),
                   axis.title.y = element_text(size = 13))
 
 )}
+```
 
+
+```{r}
 sensitivity_analysis(sds = sds, formula = f)
+```
+
+
+```{r}
 sensitivity_analysis(sds = sds, formula = fg)
 ```
 ### Model exploration
