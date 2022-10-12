@@ -1,242 +1,661 @@
 ---
-title: "Assignment 1 - Data Cleaning - Instructions"
-author: "[FILL IN YOUR NAME]"
-date: "[FILL IN THE DATE]"
-output: html_document
+title: "Assignment 1 - Language development in autistic and neurotypical children"
+output:
+  pdf_document: default
+  html_document: default
+date: "2022-08-15"
 ---
 
-# Brushing up your code skills
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 
-In this first part of the assignment we will brush up your programming skills, and make you familiar with the data sets you will be analyzing for assignment 1.
-
-In this warm-up assignment you will:
-1) Create a Github (or gitlab) account, link it to your RStudio, and create a new repository/project
-2) Use small nifty lines of code to transform several data sets into just one. The final data set will contain only the variables that are needed for the analysis in the next parts of the assignment
-3) Warm up your tidyverse skills (especially the sub-packages stringr and dplyr), which you will find handy for later assignments.
-
-N.B: Usually you'll also have to doc/pdf with a text. Not for Assignment 1.
-
-## Learning objectives:
-
-- Become comfortable with tidyverse (and R in general)
-- Test out the git integration with RStudio
-- Build expertise in data wrangling (which will be used in future assignments)
+library('tidyverse', 'brms', 'rstan', 'conflicted')
 
 
-## 0. First an introduction on the data
+conflict_scout()
+conflict_prefer('ar', 'brms')
+conflict_prefer('filter', 'dplyr')
+conflict_prefer('lag', 'dplyr')
+```
 
-# Language development in Autism Spectrum Disorder (ASD)
+# Assignment 1  - Language development in autistic and neurotypical children
 
-Reference to the study: https://www.ncbi.nlm.nih.gov/pubmed/30396129
+## Quick recap
+Autism Spectrum Disorder is often related to language impairment. However, this phenomenon has rarely been empirically traced in detail: i) relying on actual naturalistic language production, ii) over extended periods of time.
 
-Background: Autism Spectrum Disorder (ASD) is often related to language impairment, and language impairment strongly affects the patients ability to function socially (maintaining a social network, thriving at work, etc.). It is therefore crucial to understand how language abilities develop in children with ASD, and which factors affect them (to figure out e.g. how a child will develop in the future and whether there is a need for language therapy).
-However, language impairment is always quantified by relying on the parent, teacher or clinician subjective judgment of the child, and measured very sparsely (e.g. at 3 years of age and again at 6). 
-
-In this study we videotaped circa 30 kids with ASD and circa 30 comparison kids (matched by linguistic performance at visit 1) for ca. 30 minutes of naturalistic interactions with a parent. We repeated the data collection 6 times per kid, with 4 months between each visit. We transcribed the data and counted: 
+We therefore videotaped circa 30 kids with ASD and circa 30 comparison kids (matched by linguistic performance at visit 1) for ca. 30 minutes of naturalistic interactions with a parent. We repeated the data collection 6 times per kid, with 4 months between each visit. We transcribed the data and counted: 
 i) the amount of words that each kid uses in each video. Same for the parent.
 ii) the amount of unique words that each kid uses in each video. Same for the parent.
 iii) the amount of morphemes per utterance (Mean Length of Utterance) displayed by each child in each video. Same for the parent. 
 
-Different researchers involved in the project provide you with different datasets: 
-1) demographic and clinical data about the children (recorded by a clinical psychologist)
-2) length of utterance data (calculated by a linguist)
-3) amount of unique and total words used (calculated by a fumbling jack-of-all-trade, let's call him RF)
+This data is in the file you prepared in the previous class, but you can also find it here:https://www.dropbox.com/s/d6eerv6cl6eksf3/data_clean.csv?dl=0
 
-Your job in this assignment is to double check the data and make sure that it is ready for the analysis proper (Assignment 2), in which we will try to understand how the children's language develops as they grow as a function of cognitive and social factors and which are the "cues" suggesting a likely future language impairment.
 
-## 1. Let's get started on GitHub
+## The structure of the assignment
 
-In the assignments you will be asked to upload your code on Github and the GitHub repositories will be part of the portfolio, therefore all students must make an account and link it to their RStudio (you'll thank us later for this!).
+We will be spending a few weeks with this assignment. In particular, we will:
 
-Follow the link to one of the tutorials indicated in the syllabus: 
-* Recommended: https://happygitwithr.com/
-*	Alternative (if the previous doesn't work): https://support.rstudio.com/hc/en-us/articles/200532077-Version-Control-with-Git-and-SVN
-*	Alternative (if the previous doesn't work): https://docs.google.com/document/d/1WvApy4ayQcZaLRpD6bvAqhWncUaPmmRimT016-PrLBk/mobilebasic
+Part 1) simulate data in order to better understand the model we need to build, and to better understand how much data we would have to collect to run a meaningful study (precision analysis)
 
-N.B. Create a GitHub repository for the Assignment 1 and link it to a project on your RStudio.
+Part 2) analyze our empirical data and interpret the inferential results
 
-## 2. Now let's take dirty dirty data sets and make them into a tidy one
+Part 3) use your model to predict the linguistic trajectory of new children and assess the performance of the model based on that.
 
-If you're not in a project in Rstudio, make sure to set your working directory here.
-If you created an RStudio project, then your working directory (the directory with your data and code for these assignments) is the project directory.
+As you work through these parts, you will have to produce a written document (separated from the code) answering the following questions:
 
+Q1 - Briefly describe your simulation process, its goals, and what you have learned from the simulation. Add at least a plot showcasing the results of the simulation. Make a special note on sample size considerations: how much data do you think you will need? what else could you do to increase the precision of your estimates?
+
+Q2 - Briefly describe the empirical data and how they compare to what you learned from the simulation (what can you learn from them?). Briefly describe your model(s) and model quality. Report the findings: how does development differ between autistic and neurotypical children (N.B. remember to report both population and individual level findings)? which additional factors should be included in the model? Add at least one plot showcasing your findings.
+
+Q3 - Given the model(s) from Q2, how well do they predict the data? Discuss both in terms of absolute error in training vs testing; and in terms of characterizing the new kids' language development as typical or in need of support.
+
+
+Below you can find more detailed instructions for each part of the assignment.
+
+## Part 1 - Simulating data
+
+Before we even think of analyzing the data, we should make sure we understand the problem, and we plan the analysis. To do so, we need to simulate data and analyze the simulated data (where we know the ground truth).
+
+In particular, let's imagine we have n autistic and n neurotypical children. We are simulating their average utterance length (Mean Length of Utterance or MLU) in terms of words, starting at Visit 1 and all the way to Visit 6.
+In other words, we need to define a few parameters:
+- average MLU for ASD (population mean) at Visit 1 and average individual deviation from that (population standard deviation)
+- average MLU for TD (population mean) at Visit 1 and average individual deviation from that (population standard deviation)
+- average change in MLU by visit for ASD (population mean) and average individual deviation from that (population standard deviation)
+- average change in MLU by visit for TD (population mean) and average individual deviation from that (population standard deviation)
+- an error term. Errors could be due to measurement, sampling, all sorts of noise. 
+
+Note that this makes a few assumptions: population means are exact values; change by visit is linear (the same between visit 1 and 2 as between visit 5 and 6). This is fine for the exercise. In real life research, you might want to vary the parameter values much more, relax those assumptions and assess how these things impact your inference.
+
+
+We go through the literature and we settle for some values for these parameters:
+- average MLU for ASD and TD: 1.5 (remember the populations are matched for linguistic ability at first visit)
+- average individual variability in initial MLU for ASD 0.5; for TD 0.3 (remember ASD tends to be more heterogeneous)
+- average change in MLU for ASD: 0.4; for TD 0.6 (ASD is supposed to develop less)
+- average individual variability in change for ASD 0.4; for TD 0.2 (remember ASD tends to be more heterogeneous)
+- error is identified as 0.2
+
+This would mean that on average the difference between ASD and TD participants is 0 at visit 1, 0.2 at visit 2, 0.4 at visit 3, 0.6 at visit 4, 0.8 at visit 5 and 1 at visit 6.
+
+With these values in mind, simulate data, plot the data (to check everything is alright); and set up an analysis pipeline.
+Remember the usual bayesian workflow:
+- define the formula
+- define the prior
+- prior predictive checks
+- fit the model
+- model quality checks: traceplots, divergences, rhat, effective samples
+- model quality checks: posterior predictive checks, prior-posterior update checks
+- model comparison
+
+Once the pipeline is in place, loop through different sample sizes to assess how much data you would need to collect. N.B. for inspiration on how to set this up, check the tutorials by Kurz that are linked in the syllabus.
+
+BONUS questions for Part 1: what if the difference between ASD and TD was 0? how big of a sample size would you need? What about different effect sizes, and different error terms?
+
+## Simulating the data
+
+### Plotting the real MLU data to see how real MLU data looks more or less
 ```{r}
-pacman::p_load(tidyverse, janitor)
+
+real_data <- read_csv('a0_data.csv')
+
+gg_real_mlu <- ggplot(real_data, aes(x = chi_mlu, fill = diagnosis, alpha = 0.3))+
+  geom_density()+
+  facet_wrap(~ visit)
+
+gg_real_mlu
+```
+### Making a tibble with the distribution parameters
+```{r}
+#- average MLU for ASD and TD: 1.5 (remember the populations are matched for linguistic ability at first visit)
+#- average individual variability in initial MLU for ASD 0.5; for TD 0.3 (remember ASD tends to be more heterogeneous)
+#- average change in MLU for ASD: 0.4; for TD 0.6 (ASD is supposed to develop less)
+#- average individual variability in change for ASD 0.4; for TD 0.2 (remember ASD tends to be more heterogeneous)
+#- error is identified as 0.2
+
+# mlu = intercept +visit*beta + error
+# mlu = G(i_mu, i_sd) + G(v_mu, v_sd) + G(e_mu, e_sd)
+
+
+#to_do list:
+  # - might be more suitable to use something else than the normal distirubtion for the error
+  # - understand the log normal distribution mathematically more
+  # - understand why the prior check gets such a crazily wide scale
+  # - find a way to could find the number of parameters for which the effective samples were below 0.1 of the total sample number
+
+# Questions:
+#   - why does the prior pp_check show negative predictions???
+#   - how to set the sd prior for both asd and td for the gr(by = diagnosis) model (seems to be an open issue in brms <link>)
+
+log_mu <- function(mu, sd){log(mu^2/sqrt(sd^2 + mu^2))}
+log_sd <- function(mu, sd){sqrt(log(1 + sd^2/mu^2))} #taken from https://en.wikipedia.org/wiki/Log-normal_distribution#Arithmetic_moments
+
+
+p <- tibble(parameter = c('intercept', 'slope', 'error') %>% rep(2),
+            diagnosis = c('asd', 'td') %>% rep(each = 3) %>% as_factor,
+            mu = c(1.5, 0.4, 0, 1.5, 0.6, 0),
+            sd = c(0.5, 0.4, 0.2, 0.3, 0.2, 0.2)) %>%
+  group_by(parameter) %>% 
+  mutate(mu_log = if_else(parameter == 'error', mu, log_mu(mu, sd)),
+         sd_log = if_else(parameter == 'error', sd, log_sd(mu, sd))
+         )
+
+
+
+head(p)
+```
+### Simulating the data
+```{r}
+
+# n - the number of participants in each condition
+
+
+simulate_data <- function(seed, n){
+
+  set.seed(seed)
+  
+  df <- tibble(id = seq(1, (n*2), by = 1) %>% as_factor) %>% 
+    mutate(diagnosis = rep(c('asd', 'td'), each = n) %>% as_factor) %>%
+    slice(rep(seq_along(id), each = 6)) %>% 
+    group_by(id) %>% 
+    mutate(
+           ind_int = if_else(diagnosis == 'asd',
+                             rlnorm(1, mean = p$mu_log[[1]], sd = p$sd_log[[1]]),
+                             rlnorm(1, mean = p$mu_log[[4]], sd = p$sd_log[[4]])),
+           
+           ind_slope = if_else(diagnosis == 'asd',
+                               rlnorm(1, mean =  p$mu_log[[2]], sd = p$sd_log[[2]]),
+                               rlnorm(1, mean =  p$mu_log[[5]], sd = p$sd_log[[5]])),
+           
+          visit = seq(1, 6, by = 1),
+           
+          t_mlu = if_else(visit == 1, ind_int, ind_int + ind_slope*(as.numeric(visit) - 1)),
+          
+          mlu = t_mlu + rnorm(seq_along(n()), mean = p$mu[[3]], sd = p$sd[[3]])
+          )
+          
+  return(df)
+}
+
+sim_data <- simulate_data(1, 10000) #such a number of participants is unrealistically high, but the point here is just to check whether there are any disprepancies between the data generative process described in the instructions and the one we managed to code. As well as how does data generated by the simulation compare to the real data.
 ```
 
-Load the three data sets, after downloading them from dropbox and saving them in your working directory:
-* Demographic data for the participants: https://www.dropbox.com/s/w15pou9wstgc8fe/demo_train.csv?dl=0
-* Length of utterance data: https://www.dropbox.com/s/usyauqm37a76of6/LU_train.csv?dl=0
-* Word data: https://www.dropbox.com/s/8ng1civpl2aux58/token_train.csv?dl=0
-
+### Checking whether all worked fine
 ```{r}
-demo_data <- read_csv('demo_train.csv')
-utterance_data <- read_csv('lu_train.csv')
-words_data <- read_csv('token_train.csv')
-```
 
-Explore the 3 data sets (e.g. visualize them, summarize them, etc.). You will see that the data is messy, since the psychologist collected the demographic data, the linguist analyzed the length of utterance in May 2014 and the fumbling jack-of-all-trades analyzed the words several months later. 
-In particular:
-- the same variables might have different names (e.g. participant and visit identifiers)
-- the same variables might report the values in different ways (e.g. participant and visit IDs)
-Welcome to real world of messy data :-)
+glimpse(sim_data)
 
-Before being able to combine the data sets we need to make sure the relevant variables have the same names and the same kind of values.
-
-So:
-
-2a. Identify which variable names do not match (that is are spelled differently) and find a way to transform variable names.
-Pay particular attention to the variables indicating participant and visit.
-
-Tip: look through the chapter on data transformation in R for data science (http://r4ds.had.co.nz). Alternatively you can look into the package dplyr (part of tidyverse), or google "how to rename variables in R". Or check the janitor R package. There are always multiple ways of solving any problem and no absolute best method.
+sim_data %>% 
+  group_by(diagnosis) %>% 
+  summarise(across(starts_with('ind'), list(mean = mean, sd = sd), .names = '{.col}_{.fn}'))
 
 
-```{r}
-head(demo_data)
-head(utterance_data)
-head(words_data)
+# "This would mean that on average the difference between ASD and TD participants is 0 at visit 1, 0.2 at visit 2, 0.4 at visit 3, 0.6 at visit 4, 0.8 at visit 5 and 1 at visit 6."
+
+sim_data %>% 
+  group_by(visit) %>% 
+  summarise(avg_diff = mean(t_mlu[diagnosis == 'td']) - mean(t_mlu[diagnosis == 'asd']))
 ```
 
 
-
 ```{r}
-demo_data <- demo_data %>% 
-  rename(id = Child.ID, visit = Visit) %>% 
-  mutate(id = as_factor(id), Visit = as.numeric(visit))
+# plotting the resulting individual integer and slope distributions
 
-utterance_data <- utterance_data%>% 
-  rename(id = SUBJ, visit = VISIT) %>% 
-  mutate(visit = str_remove_all(visit, '\\D*'), visit = as.numeric(visit))
+ggplot(sim_data)+
+  geom_density(aes(ind_int, fill = diagnosis, alpha = 0.2))
 
-words_data <- words_data %>% 
-  rename(id = SUBJ, visit = VISIT) %>% 
-  mutate(visit = str_remove_all(visit, '\\D*'), visit = as.numeric(visit))
-
-head(demo_data)
-head(utterance_data)
-head(words_data)
+ggplot(sim_data)+
+  geom_density(aes(ind_slope, fill = diagnosis, alpha = 0.2))
 ```
 
-2b. Find a way to homogenize the way "visit" is reported (visit1 vs. 1).
-
-Tip: The stringr package is what you need. str_extract () will allow you to extract only the digit (number) from a string, by using the regular expression \\d.
-
 
 ```{r}
-#did it as part of the previous point without reading this one, but less efficiently :ccc (str_remove_all instead of str_extract)
+# comparing the simulated data to some real mlu data
+gg_real_mlu
+
+ggplot(sim_data)+
+  geom_density(aes(t_mlu, fill = diagnosis, alpha = 0.2))+
+  facet_wrap(~ visit)
+
+ggplot(sim_data)+
+  geom_density(aes(mlu, fill = diagnosis, alpha = 0.2))+
+  facet_wrap(~ visit)
+```
+## Analysing the data
+Remember the usual bayesian workflow:
+- define the formula
+- define the prior
+- prior predictive checks
+- fit the model
+- model quality checks: traceplots, divergences, rhat, effective samples
+- model quality checks: posterior predictive checks, prior-posterior update checks
+- model comparison
+
+### Defining the formula
+```{r}
+# Individual intercepts and slopes for each participant, pooling done without regard to the participant's condition (diagnosis)
+f <- bf(mlu ~ 0 + diagnosis + diagnosis:visit + (1 + visit|id))
+
+
+# Individual intercepts and slopes for each participant, pooling done taking into account participants coming from two diffrent groups (diagnosis)
+fg <- bf(mlu ~ 0 + diagnosis + diagnosis:visit + (1 + visit | gr(id, by = diagnosis)))
 
 ```
-
-2c. We also need to make a small adjustment to the content of the Child.ID column in the demographic data. Within this column, names that are not abbreviations do not end with "." (i.e. Adam), which is the case in the other two data sets (i.e. Adam.). If The content of the two variables isn't identical the rows will not be merged. 
-A neat way to solve the problem is simply to remove all "." in all data sets.
-
-Tip: stringr is helpful again. Look up str_replace_all
-Tip: You can either have one line of code for each child name that is to be changed (easier, more typing) or specify the pattern that you want to match (more complicated: look up "regular expressions", but less typing)
-
-
+### Define the priors:
 ```{r}
-demo_data <- demo_data %>% 
-  mutate(id = str_remove_all(id, '\\.*'))
+get_prior(formula = f,
+          data = sim_data,
+          family = lognormal)
 
-utterance_data <- utterance_data %>% 
-  mutate(id = str_remove_all(id, '\\.*'))
-
-words_data <- words_data %>% 
-  mutate(id = str_remove_all(id, '\\.*'))
-
+get_prior(fg,
+          data = sim_data,
+          family = lognormal)
 ```
 
-2d. Now that the nitty gritty details of the different data sets are fixed, we want to make a subset of each data set only containig the variables that we wish to use in the final data set.
-For this we use the tidyverse package dplyr, which contains the function select(). 
-
-The variables we need are: 
-* Child.ID, 
-* Visit, 
-* Diagnosis, 
-* Ethnicity, 
-* Gender, 
-* Age, 
-* ADOS,  
-* MullenRaw, 
-* ExpressiveLangRaw, 
-* Socialization,
-* MOT_MLU, 
-* CHI_MLU, 
-* types_MOT, 
-* types_CHI, 
-* tokens_MOT, 
-* tokens_CHI.
-
-Most variables should make sense, here the less intuitive ones. 
-* ADOS (Autism Diagnostic Observation Schedule) indicates the severity of the autistic symptoms (the higher the score, the worse the symptoms). Ref: https://link.springer.com/article/10.1023/A:1005592401947
-* MLU stands for mean length of utterance (usually a proxy for syntactic complexity)
-* types stands for unique words (e.g. even if "doggie" is used 100 times it only counts for 1)
-* tokens stands for overall amount of words (if "doggie" is used 100 times it counts for 100) 
-* MullenRaw indicates non verbal IQ, as measured by Mullen Scales of Early Learning (MSEL https://link.springer.com/referenceworkentry/10.1007%2F978-1-4419-1698-3_596)
-* ExpressiveLangRaw indicates verbal IQ, as measured by MSEL
-* Socialization indicates social interaction skills and social responsiveness, as measured by Vineland (https://cloudfront.ualberta.ca/-/media/ualberta/faculties-and-programs/centres-institutes/community-university-partnership/resources/tools---assessment/vinelandjune-2012.pdf)
-
-Feel free to rename the variables into something you can remember (i.e. nonVerbalIQ, verbalIQ)
 
 ```{r}
-x <- "* id, * visit, * Diagnosis, * Ethnicity, * Gender, * Age, * ADOS,  * MullenRaw, * ExpressiveLangRaw, * Socialization, * MOT_MLU, * CHI_MLU, * types_MOT, * types_CHI, * tokens_MOT, * tokens_CHI." %>% 
-  str_extract_all('\\w+') %>% 
-  unlist()
+head(p)
 
-data <- merge(demo_data, utterance_data, all = T) %>% 
-  merge(words_data, all = T)
+priors <- c(
+  prior(normal(0, 0.2), class = b),
+  prior(normal(0.4, 0.1), class = b, coef = diagnosisasd),
+  prior(normal(0.4, 0.1), class = b, coef = diagnosistd),
+  prior(normal(0, 0.2), class = sd, coef = Intercept, group = id),
+  prior(normal(0, 0.1), class = sd, coef = visit, group = id)
+        )
 
-data <- select(data, x)
 
-rm(x)
-```
-
-2e. Finally we are ready to merge all the data sets into just one. 
-
-Some things to pay attention to:
-* make sure to check that the merge has included all relevant data (e.g. by comparing the number of rows)
-* make sure to understand whether (and if so why) there are NAs in the data set (e.g. some measures were not taken at all visits, some recordings were lost or permission to use was withdrawn)
-
-```{r}
-#i did it in the previous section thinking it would make selecting easier
 
 ```
 
 
-2f. Only using clinical measures from Visit 1
-In order for our models to be useful, we want to minimize the need to actually test children as they develop. In other words, we would like to be able to understand and predict the children's linguistic development after only having tested them once. Therefore we need to make sure that our ADOS, MullenRaw, ExpressiveLangRaw and Socialization variables are reporting (for all visits) only the scores from visit 1.
-
-A possible way to do so:
-* create a new data set with only visit 1, child id and the 4 relevant clinical variables to be merged with the old dataset
-* rename the clinical variables (e.g. ADOS to ADOS1) and remove the visit (so that the new clinical variables are reported for all 6 visits)
-* merge the new data set with the old
-
 
 ```{r}
+# setting the number of participant lower to make it more realitic for a study setting and decrease the computation time
+sim_data <- simulate_data(1, 100)
 
-visit1_df <- data %>% 
-  select(id, visit, ADOS, MullenRaw, ExpressiveLangRaw, Socialization) %>% 
-  group_by(id) %>% 
-  mutate(across(.cols = 2:5, .fns = ~ replace(x = .x, values = .x[visit == 1]))) %>% 
-  rename_with(.fn = ~ paste0(., "_1"), .cols = 3:6 )
+
+f_m_prior <- brm(
+  f, 
+  data = sim_data,
+  family = lognormal,
+  prior = priors,
+  sample_prior = 'only',
+#  backend = 'cmdstanr',
+  cores = 3,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+)
+```
+### Prior predictive checks:
+```{r}
+summary(f_m_prior)
+pp_check(f_m_prior, ndraws = 100)
+```
+### Fitting the model
+```{r}
+f_m <- brm(
+  f, 
+  data = sim_data,
+  family = lognormal,
+  prior = priors,
+  sample_prior = TRUE,
+#  backend = 'cmdstanr',
+  cores = 3,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+)
+
+
+fg_m <- brm(
+  fg,
+  data = sim_data,
+  family = lognormal,
+  prior = priors,
+  sample_prior = T,
+ # backend = 'cmdstanr',
+  cores = 3,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+)
+```
+### Model quality checks:
+```{r}
+summary(f_m)
+summary(fg_m)
+```
+
+#### Checking convergance:
+```{r}
+models <- list(f_m, fg_m)
+      
+# launch_shinystan(f_m) # - very nice for exploring and diagnosing the model, but opens up in a new window
+
+map(.x = models, ~ mcmc_plot(.x, type = 'trace') + 
+    theme_classic() + 
+    scale_color_manual(values=c("#E66101", "#998EC3", "#542788", "#F1A340")) + 
+    ylab("") + 
+    xlab("Iteration") + 
+    labs(subtitle = 'Trace Plots'))
+
+map(.x = models, ~ mcmc_plot(.x, type = 'rhat_hist'))
+map(.x = models, ~ mcmc_plot(.x, type = 'neff'))
+```
+
+#### Posterior predictive checks:
+```{r}
+pp_check(f_m, ndraws = 100)
+pp_check(fg_m, ndraws = 100)
+```
+
+
+
+
+#### Prior-posterior updata checks:
+```{r}
+i <- get_variables(fg_m)
+i[grepl("prior_sd", i, fixed = TRUE)]
 
 ```
-2g. Final touches
+#### Note:
+For some reason, in the case of varying slopes by diagnosis the prior function seems to automatically only set the standard deviation priors for the 'ASD' diagnosis and not the 'TD' diagnosis.
+From what we managed to find only the possibility of setting the priors separately for each group in gr(by = x) might be an open issue in brms (https://github.com/paul-buerkner/brms/issues/874). Because of that we only made prior - posterior plots for the 'ASD' group.
+```{r}
 
-Now we want to
-* anonymise our participants (they are real children!). 
-* make sure the variables have sensible values. E.g. right now gender is marked 1 and 2, but in two weeks you will not be able to remember, which gender were connected to which number, so change the values from 1 and 2 to Female and Male in the gender variable (calling Female F would create issues, since F is also used for FALSE). For the same reason, you should also change the values of Diagnosis from A and B to ASD (autism spectrum disorder) and TD (typically developing). Tip: Try taking a look at ifelse(), or google "how to rename levels in R".
-* Save the data set using into a csv file. Hint: look into write.csv()
+pp_update_plot <- function(model, priors){
+
+df <- left_join(spread_draws(model, `.*b_.*`, regex = TRUE),
+             spread_draws(model, `.*sd_.*`, regex = TRUE)) %>% 
+  select(!c(.chain, .iteration, .draw) &
+           !contains('cor') &
+           !any_of(c("sd_id__Intercept:diagnosistd", "sd_id__visit:diagnosistd")))
+
+gg_posteriors <- select(df, !starts_with('prior')) %>% as.list
+gg_priors <- select(df, starts_with('prior')) %>% as.list
+gg_titles <- names(gg_posteriors)
+
+pmap(.l = list(.x = gg_priors, .y = gg_posteriors, .t = gg_titles),
+     .f = function(.x, .y, .t){
+       ggplot()+
+            geom_density(aes(.x, fill = 'steelblue', alpha = 0.5))+
+            geom_density(aes(.y, fill = '#FC4E07', alpha = 0.5))+
+            ggtitle(.t)+
+            theme_classic()+
+            guides(fill = 'none', alpha = 'none') +
+            labs(x = NULL)}
+)}
+```
+
 
 ```{r}
-final_df <- left_join(data, visit1_df) %>% 
-  rename_with(~ tolower(.x)) %>% 
-  group_by(id) %>%
-  mutate(gender = if_else(gender == 1, 'male', 'female'),
-         diagnosis = if_else(diagnosis == 'A', 'ASD', 'TD'),
-         id = paste0(c(sample(LETTERS, 1), sample(letters, 4)), collapse = ''))
+pp_update_plot(f_m, priors)
+```
 
 
-write_csv(final_df, 'cleaned_data.csv')
+```{r}
+pp_update_plot(fg_m, priors)
+```
+### Sensitivity analysis:
+```{r}
+sds <-  seq(0.1, 1, by = 0.1)
+
+sensitivity_analysis<- function(sds, formula){
+
+models_data <- tibble()
+
+models_data <- map_df(
+  .x = sds,
+  .f = function(.x){
+  
+  new_priors <- priors
+  new_priors[1, ] <- set_prior(paste0("normal(0, ", .x ,")"), class = "b")
+    
+  model <- brm(
+    formula, 
+    data = sim_data,
+    family = lognormal,
+    prior = new_priors,
+    sample_prior = TRUE,
+  #  backend = 'cmdstanr',
+    cores = 3,
+    control = list(
+      adapt_delta = 0.99,
+      max_treedepth = 20)
+  )
+  
+  
+  models_data %>% 
+    rbind(gather_draws(model, c(`b_diagnosisasd:visit`, `b_diagnosistd:visit`)) %>% median_qi(.width = 0.95))
+})
+
+write_rds(models_data, paste0(deparse(substitute(formula)), "_", "sensitivity", ".Rds"))
+
+
+map(.x = models_data %>% group_split(.variable),
+    .f = ~ ggplot(data = .x, aes(x = sds, y = .value)) +
+            geom_point(size = 3) +
+            geom_pointrange(aes(ymin = .lower, ymax = .upper)) +
+            ylim(0.1, 0.3) +
+            labs(x = "Standard Deviation of Slope Prior", 
+                 y = "Posterior Estimate for slope", 
+                 title = paste0("'", .x$.variable, "'"),
+                 subtitle = "Sensitivity analysis for multi-level model") +
+            theme_bw() +
+            theme(plot.title = element_text(hjust = 0.5, size = 15),
+                  axis.title.x = element_text(size = 13),
+                  axis.text.y = element_text(size = 12),
+                  axis.text.x = element_text(size = 12),
+                  axis.title.y = element_text(size = 13))
+
+)}
+```
+
+
+```{r}
+sensitivity_analysis(sds = sds, formula = f)
+```
+
+
+```{r}
+sensitivity_analysis(sds = sds, formula = fg)
+```
+### Model exploration
+#### Hypothesis testing
+```{r}
+conditional_effects(f_m)
+conditional_effects(fg_m)
+```
+```{r}
+hypothesis(f_m, 'diagnosistd:visit - diagnosisasd:visit > 0') 
+hypothesis(fg_m, 'diagnosistd:visit - diagnosisasd:visit > 0') 
+```
+
+
+
+```{r}
+# comparing model estimates with the true generative process
+
+head(p)
+
+
+t_vs_est <- function(model){
+est <- rbind(model %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
+             model %>% gather_draws(`sd_.*`, regex = T) %>% mean_qi) %>% 
+  select(!c(.variable, .point, .interval)) %>% 
+  rename_with(.cols = everything(), ~ paste0("est_", .x) %>% str_remove_all(fixed('.'))) %>% 
+  mutate(across(where(is.numeric), exp))
+
+if (nrow(est) == 6){
+  est <- rbind(est, est %>% slice(c(5,6)))
+  } else
+    est <- est
+
+x <- rbind(est, est %>% slice(c(5,6)))
+
+t_value <- p %>% ungroup %>% filter(!parameter == 'error')
+t_value <- rbind(t_value %>% select(mu) %>% rename('t_value' = mu),
+                 t_value %>% select(sd) %>% rename('t_value' = sd))
+
+t_vs_est <- tibble(term = 
+                    map2_chr(.x = rep(c('mu','sd'), each = 4),
+                           .y = rep(c('intercept', 'slope'), times = 4),
+                           .f = ~ paste0(.x, '_', .y)),
+                   diagnosis = rep(c('asd', 'asd', 'td', 'td'), times = 2),
+                   t_value,
+                   est)
+
+map(.x = t_vs_est %>% group_split(term),
+    .f = ~ 
+      ggplot(.x, aes(y = est_value, x = diagnosis, color = diagnosis)) +
+        geom_hline(aes(yintercept = t_value, color = diagnosis)) +
+        geom_point(size = 3) +
+        geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
+        labs(title = paste0("'", .x$term, "'"),
+             subtitle = "True value vs. model estimate",
+             y = "True value",
+             x = "Estimated value by diagnosis") +
+        theme_bw() +
+        theme(axis.text.x = element_blank())
+    )
+}
+```
+
+
+```{r}
+t_vs_est(f_m)
+```
+```{r}
+t_vs_est(fg_m)
+```
+#### individual effects
+
+```{r}
+
+ind_t_vs_est <- function(model){
+
+t_value <- sim_data %>% ungroup %>% filter(visit == 1)
+t_value <- rbind(
+    t_value %>% select(ind_int) %>% rename('t_value' = ind_int),
+    t_value %>% select(ind_slope) %>% rename('t_value' = ind_slope)
+  )
+
+ind_t_vs_est <- model %>% recover_types(sim_data) %>% gather_draws(r_id[id, term]) %>%
+  mean_qi(.width = 0.95) %>% 
+  select(!c(.variable, .point, .interval, .width)) %>% 
+  rename_with(.cols = !c(term, id), ~ paste0("est_", .x) %>% str_remove_all(fixed('.')))%>% 
+  mutate(across(where(is.numeric), exp)) %>% 
+  cbind(t_value) %>% 
+  mutate(accuracy = ifelse(t_value < est_upper & t_value > est_lower, 'accurate', 'inaccurate'),
+         diagnosis = rep(c('asd', 'td'), each = 200)) 
+
+map(.x = ind_t_vs_est %>% group_split(term),
+    .f = ~
+      ggplot(.x, aes(x = as.numeric(id), y = est_value, color = accuracy)) +
+        geom_point(aes(shape = diagnosis), size = 3) +
+        geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
+        scale_color_manual(values=c('green', 'red')) + 
+        labs(title = 'True individual effects vs. model estimates',
+             subtitle = paste0("'", .x$term, "'"),
+             x = 'ID',
+             y = 'Estimated value with 95% CI')
+  )
+}
+        
+```
+```{r}
+ind_t_vs_est(f_m)
+```
+```{r}
+ind_t_vs_est(fg_m)
+```
+## Power Analysis
+### NHST type 'significance' approach:
+```{r}
+
+update_fg <- function(seed, n){
+  df <- 
+    update(fg_m,
+       newdata = simulate_data(seed = seed, n = n),
+       seed = seed, 
+       iter = 1000) %>% 
+    gather_draws(c(`b_diagnosisasd:visit`,`b_diagnosistd:visit`)) %>%                                                mean_qi(.width = 0.95) %>% 
+        rename_with(.cols = everything(), ~ str_remove_all(.x, fixed('.'))) %>%
+        add_row
+    
+    df$variable[[3]] <- 'diff'
+    df$value[[3]] <- df$value[[2]] - df$value[[1]]
+    df$lower[[3]] <- df$lower[[2]]- df$lower[[1]]
+    df$upper[[3]] <- df$upper[[2]] - df$upper[[1]]
+    
+  df <- df %>% slice(3)
+}
+
+power_data <- tibble(N = c(10,100, by = 10)) %>% 
+   rowwise %>% 
+   mutate(seed = list(seq(1,100, by = 1))) %>% 
+   unnest(seed) %>% 
+   mutate(dfs = map2(.x = seed, .y = N, .f = ~ update_fg(.x, .y))) %>% 
+   unnest(dfs)
+
+  
+map(.x = power_data %>% group_split(n) %>% filter(variable == 'diff'),
+    .f = ~
+        ggplot(.x, aes(x = seed %>% reorder(lower), y = value, ymin = lower, ymax = upper)) +
+          geom_hline(yintercept = c(0, 0.2), color = "white") +
+          geom_pointrange(fatten = 1/2) +
+          labs(title = "Difference of mean slope parameters between the two groups",
+               subtitle = paste0("N = ", n),
+               x = "seed (i.e., simulation index)",
+               y = "value")
+)
+```
+### Accuraccy (the width of credible intervals) approach:
+```{r}
+powerdata <-powerdata%>% 
+  mutate(ci_width = abs(diff_upper - diff_lower))
+
+powerdata%>% 
+  mutate(prec_check = ifelse(ci_width < 0.7, 1, 0)) %>% 
+  summarise(`proportion below 0.7` = mean(prec_check),
+            `average width`        = mean(ci_width))
+```
+### Conlusions:
+
+
+
+# Part 2 - Strong in the Bayesian ken, you are now ready to analyse the actual data
+
+- Describe your sample (n, age, gender, clinical and cognitive features of the two groups) and critically assess whether the groups (ASD and TD) are balanced. Briefly discuss whether the data is enough given the simulations in part 1.
+- Describe linguistic development (in terms of MLU over time) in TD and ASD children (as a function of group). Discuss the difference (if any) between the two groups.
+- Describe individual differences in linguistic development: do all kids follow the same path? Are all kids reflected by the general trend for their group?
+
+- Include additional predictors in your model of language development (N.B. not other indexes of child language: types and tokens, that'd be cheating). Identify the best model, by conceptual reasoning, model comparison or a mix. Report the model you choose (and name its competitors, if any) and discuss why it's the best model.
+
+```{r}
+
+```
+
+
+Part 3 - From explanation to prediction
+
+N.B. There are several datasets for this exercise, so pay attention to which one you are using!
+
+1. The (training) dataset from last time (the awesome one you produced :-) ).
+2. The (test) datasets on which you can test the models from last time:
+* Demographic and clinical data: https://www.dropbox.com/s/ra99bdvm6fzay3g/demo_test.csv?dl=1
+* Utterance Length data: https://www.dropbox.com/s/uxtqqzl18nwxowq/LU_test.csv?dl=1
+* Word data: https://www.dropbox.com/s/1ces4hv8kh0stov/token_test.csv?dl=1
+
+Relying on the model(s) you trained in part 2 of the exercise, create predictions for the test set and assess how well they do compared to the actual data.
+
+- Discuss the differences in performance of your model in training and testing data. Is the model any good?
+- Let's assume you are a speech therapy clinic. You want to assess whether the kids in your test sample will have a typical (like a TD) development, or they will have a worse one, in which case they should get speech therapy support. What do your predictions tell you about that? Which kids would you provide therapy for? Is the model any good?
+
+```{r}
+
 ```
 
