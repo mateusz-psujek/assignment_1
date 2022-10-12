@@ -92,7 +92,7 @@ BONUS questions for Part 1: what if the difference between ASD and TD was 0? how
 ### Plotting the real MLU data to see how real MLU data looks more or less
 ```{r}
 
-real_data <- read_csv('cleaned_data.csv')
+real_data <- read_csv('a0_data.csv')
 
 gg_real_mlu <- ggplot(real_data, aes(x = chi_mlu, fill = diagnosis, alpha = 0.3))+
   geom_density()+
@@ -117,9 +117,6 @@ gg_real_mlu
   # - understand the log normal distribution mathematically more
   # - understand why the prior check gets such a crazily wide scale
   # - find a way to could find the number of parameters for which the effective samples were below 0.1 of the total sample number
-  # - after simulating the data make another summary table with the mean difference between both groups for each visit
-#  - make a plot of the real parameter values and model estimates
-# ***- try to make the posterior-prior update checks with gather_draws with regex = T parameter (might be way nicer)
 
 # Questions:
 #   - why does the prior pp_check show negative predictions???
@@ -168,7 +165,7 @@ simulate_data <- function(seed, n){
            
           t_mlu = (ind_int + ind_slope*(as.numeric(visit) - 1)),
           
-          e_mlu = t_mlu + rnorm(seq_along(n()), mean = p$mu[[3]], sd = p$sd[[3]])
+          mlu = t_mlu + rnorm(seq_along(n()), mean = p$mu[[3]], sd = p$sd[[3]])
           )
           
   return(df)
@@ -186,9 +183,8 @@ sim_data %>%
   group_by(diagnosis) %>% 
   summarise(across(starts_with('ind'), list(mean = mean, sd = sd), .names = '{.col}_{.fn}'))
 
+
 # "This would mean that on average the difference between ASD and TD participants is 0 at visit 1, 0.2 at visit 2, 0.4 at visit 3, 0.6 at visit 4, 0.8 at visit 5 and 1 at visit 6."
-
-
 
 sim_data %>% 
   group_by(visit) %>% 
@@ -216,7 +212,7 @@ ggplot(sim_data)+
   facet_wrap(~ visit)
 
 ggplot(sim_data)+
-  geom_density(aes(e_mlu, fill = diagnosis, alpha = 0.2))+
+  geom_density(aes(mlu, fill = diagnosis, alpha = 0.2))+
   facet_wrap(~ visit)
 ```
 ## Analysing the data
@@ -232,11 +228,11 @@ Remember the usual bayesian workflow:
 ### Defining the formula
 ```{r}
 # Individual intercepts and slopes for each participant, pooling done without regard to the participant's condition (diagnosis)
-f <- bf(e_mlu ~ 0 + diagnosis + diagnosis:visit + (1 + visit|id))
+f <- bf(mlu ~ 0 + diagnosis + diagnosis:visit + (1 + visit|id))
 
 
 # Individual intercepts and slopes for each participant, pooling done taking into account participants coming from two diffrent groups (diagnosis)
-fg <- bf(e_mlu ~ 0 + diagnosis + diagnosis:visit + (1 + visit | gr(id, by = diagnosis)))
+fg <- bf(mlu ~ 0 + diagnosis + diagnosis:visit + (1 + visit | gr(id, by = diagnosis)))
 
 ```
 ### Define the priors:
@@ -255,11 +251,11 @@ get_prior(fg,
 head(p)
 
 priors <- c(
-  prior(normal(0, 0.3), class = b),
-  prior(normal(0.2, 0.15), class = b, coef = diagnosisasd),
-  prior(normal(0.2, 0.15), class = b, coef = diagnosistd),
-  prior(normal(0, 0.35), class = sd, coef = Intercept, group = id),
-  prior(normal(0, 0.25), class = sd, coef = visit, group = id)
+  prior(normal(0, 0.2), class = b),
+  prior(normal(0.4, 0.1), class = b, coef = diagnosisasd),
+  prior(normal(0.4, 0.1), class = b, coef = diagnosistd),
+  prior(normal(0, 0.2), class = sd, coef = Intercept, group = id),
+  prior(normal(0, 0.1), class = sd, coef = visit, group = id)
         )
 
 
@@ -284,7 +280,11 @@ f_m_prior <- brm(
   sample_prior = 'only',
   backend = 'cmdstanr',
   cores = 3,
-  file = 'f_m_prior'
+  file = 'f_m_prior',
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
 )
 ```
 ### Prior predictive checks:
@@ -304,7 +304,11 @@ f_m <- brm(
   sample_prior = TRUE,
   backend = 'cmdstanr',
   cores = 3,
-  file = 'f_m'
+  file = 'f_m',
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
 )
 
 
@@ -316,7 +320,11 @@ fg_m <- brm(
   sample_prior = T,
   backend = 'cmdstanr',
   cores = 3,
-  file = 'fg_m'
+  file = 'fg_m',
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
 )
 ```
 ### Model quality checks:
@@ -329,7 +337,7 @@ summary(fg_m)
 ```{r}
 models <- list(f_m, fg_m)
       
-# launch_shinystan(f_m) # - very nice for exploring and diagnosing the model, but you can't really print plots from that one i guess 
+# launch_shinystan(f_m) # - very nice for exploring and diagnosing the model, but opens up in a new window
 
 map(.x = models, ~ mcmc_plot(.x, type = 'trace') + 
     theme_classic() + 
@@ -381,7 +389,8 @@ pmap(.l = list(.x = priors, .y = posteriors, .t = titles),
             geom_density(aes(.y, fill = '#FC4E07', alpha = 0.5))+
             ggtitle(.t)+
             theme_classic()+
-            guides(fill = 'none', alpha = 'none')}
+            guides(fill = 'none', alpha = 'none') +
+            labs(x = NULL)}
 )}
 ```
 
@@ -396,8 +405,7 @@ pp_update_plot(fg_m, priors)
 ```
 ### Sensitivity analysis:
 ```{r}
-sds <-  seq(0.1, 1.5, by = 0.1)
-sds <- c(0.1, 0.9) #just to check it, REMOVE later
+sds <-  seq(0.1, 1, by = 0.1)
 
 sensitivity_analysis<- function(sds, formula){
 
@@ -417,14 +425,17 @@ models_data <- map_df(
     prior = new_priors,
     sample_prior = TRUE,
     backend = 'cmdstanr',
-    cores = 3)
+    cores = 3,
+    control = list(
+      adapt_delta = 0.99,
+      max_treedepth = 20)
+  )
   
   
   models_data %>% 
     rbind(gather_draws(model, c(`b_diagnosisasd:visit`, `b_diagnosistd:visit`)) %>% median_qi(.width = 0.95))
 })
 
-models_data <- models_data %>% mutate(sds = sds)
 write_rds(models_data, paste0(deparse(substitute(formula)), "_", "sensitivity", ".Rds"))
 
 
@@ -433,8 +444,8 @@ map(.x = models_data %>% group_split(.variable),
             geom_point(size = 3) +
             geom_pointrange(aes(ymin = .lower, ymax = .upper)) +
             ylim(0.1, 0.3) +
-            labs(x="Standard Deviation of Slope Prior", 
-                 y="Posterior Estimate for slope", 
+            labs(x = "Standard Deviation of Slope Prior", 
+                 y = "Posterior Estimate for slope", 
                  title = paste0("'", .x$.variable, "'"),
                  subtitle = "Sensitivity analysis for multi-level model") +
             theme_bw() +
@@ -460,7 +471,7 @@ sensitivity_analysis(sds = sds, formula = fg)
 #### Hypothesis testing
 ```{r}
 conditional_effects(f_m)
-condition_effects(fg_m)
+conditional_effects(fg_m)
 ```
 ```{r}
 hypothesis(f_m, 'diagnosistd:visit - diagnosisasd:visit > 0') 
@@ -479,7 +490,8 @@ t_vs_est <- function(model){
 est <- rbind(model %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
              model %>% gather_draws(`sd_.*`, regex = T) %>% mean_qi) %>% 
   select(!c(.variable, .point, .interval)) %>% 
-  rename_with(.cols = everything(), ~ paste0("est_", .x) %>% str_remove_all(fixed('.')))
+  rename_with(.cols = everything(), ~ paste0("est_", .x) %>% str_remove_all(fixed('.'))) %>% 
+  mutate(across(where(is.numeric), exp))
 
 if (nrow(est) == 6){
   est <- rbind(est, est %>% slice(c(5,6)))
@@ -489,8 +501,8 @@ if (nrow(est) == 6){
 x <- rbind(est, est %>% slice(c(5,6)))
 
 t_value <- p %>% ungroup %>% filter(!parameter == 'error')
-t_value <- rbind(t_value %>% select(mu_log) %>% rename('t_value' = mu_log),
-                 t_value %>% select(sd_log) %>% rename('t_value' = sd_log))
+t_value <- rbind(t_value %>% select(mu) %>% rename('t_value' = mu),
+                 t_value %>% select(sd) %>% rename('t_value' = sd))
 
 t_vs_est <- tibble(term = 
                     map2_chr(.x = rep(c('mu','sd'), each = 4),
@@ -522,8 +534,9 @@ t_vs_est(f_m)
 ```
 ```{r}
 t_vs_est(fg_m)
- ```
+```
 #### individual effects
+
 ```{r}
 
 ind_t_vs_est <- function(model){
@@ -538,6 +551,7 @@ ind_t_vs_est <- model %>% recover_types(sim_data) %>% gather_draws(r_id[id, term
   mean_qi(.width = 0.95) %>% 
   select(!c(.variable, .point, .interval, .width)) %>% 
   rename_with(.cols = !c(term, id), ~ paste0("est_", .x) %>% str_remove_all(fixed('.')))%>% 
+  mutate(across(where(is.numeric), exp)) %>% 
   cbind(t_value) %>% 
   mutate(accuracy = ifelse(t_value < est_upper & t_value > est_lower, 'accurate', 'inaccurate'),
          diagnosis = rep(c('asd', 'td'), each = 200)) 
@@ -547,7 +561,11 @@ map(.x = ind_t_vs_est %>% group_split(term),
       ggplot(.x, aes(x = as.numeric(id), y = est_value, color = accuracy)) +
         geom_point(aes(shape = diagnosis), size = 3) +
         geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
-        scale_color_manual(values=c('green', 'red'))
+        scale_color_manual(values=c('green', 'red')) + 
+        labs(title = 'True individual effects vs. model estimates',
+             subtitle = paste0("'", .x$term, "'"),
+             x = 'ID',
+             y = 'Estimated value with 95% CI')
   )
 }
         
@@ -558,14 +576,128 @@ ind_t_vs_est(f_m)
 ```{r}
 ind_t_vs_est(fg_m)
 ```
-
-### Model comparison
-```{r}
-
-```
-
 ## Power Analysis
 ```{r}
+#power and precision analysis
+#creating a function that creates n_sim simulated dataframes along the function specified in the first part (here: simulate_df(n) - sidenote: n in thisfunction is the total number of participants) and then updates the model fit (here: MLU_m1) accordingly. iter in update is lowered to 1000 to complete the process faster
+#s3 saves the model specifications, in my case, the parameters are DiagnosisASD, DiagnosisTD, DiagnosisASD:Visit, DiagnosisTD:Visit - sidenote: use fixef() to see your model's parameters
+sim_and_fit <- function(seed,n){
+  set.seed(seed)
+  d <- simulate_data(n)
+  
+   update(MLU_m1,
+         newdata = d, 
+         seed = seed, 
+         iter = 1000) %>% 
+    fixef() %>% 
+    data.frame() %>% 
+     rownames_to_column("parameter")
+}
+
+n_sim <- 80
+
+s3 <-
+  tibble(seed = 1:n_sim) %>% 
+  mutate(b1 = map(seed, sim_and_fit, n = 40)) %>% 
+  unnest(b1)
+view(s3)
+#think i still need to transform the model specifications from logscale with exp()
+```
+```{r}
+#filtering by parameter to get the effects for each parameter 
+DiaASD_df <- s3 %>% 
+ filter(parameter == "DiagnosisASD") %>% 
+  rename_with( ~paste(.x, "DiaASD", sep = "_"), .cols = c("Estimate", "Est.Error", "Q2.5", "Q97.5")) %>% 
+  mutate(parameter = NULL)
+
+DiaTD_df <- s3 %>% 
+ filter(parameter == "DiagnosisTD") %>% 
+  rename_with( ~paste(.x, "DiaTD", sep = "_"), .cols = c("Estimate", "Est.Error", "Q2.5", "Q97.5")) %>% 
+  mutate(parameter = NULL)
+
+DiaASD_V_df <- s3 %>% 
+ filter(parameter == "DiagnosisASD:Visit") %>% 
+  rename_with( ~paste(.x, "DiaASD_V", sep = "_"), .cols = c("Estimate", "Est.Error", "Q2.5", "Q97.5"))%>%
+  mutate(parameter = NULL)
+
+DiaTD_V_df <- s3 %>% 
+ filter(parameter == "DiagnosisTD:Visit") %>% 
+  rename_with( ~paste(.x, "DiaTD_V", sep = "_"), .cols = c("Estimate", "Est.Error", "Q2.5", "Q97.5"))%>%
+  mutate(parameter = NULL)
+
+powerdata <- join_all(list(DiaASD_df, DiaTD_df, DiaASD_V_df, DiaTD_V_df), by = "seed", type = "left")%>%
+  mutate(diffInterceptEst = Estimate_DiaTD - Estimate_DiaASD) %>% 
+  mutate(diffInterceptQ2.5 = Q2.5_DiaTD - Q2.5_DiaASD) %>% 
+  mutate(diffInterceptQ97.5 = Q97.5_DiaTD - Q97.5_DiaASD) %>% 
+  mutate(diffSlopeEst = Estimate_DiaTD_V - Estimate_DiaASD_V) %>%
+  mutate(diffSlopeQ2.5 = Q2.5_DiaTD_V - Q2.5_DiaASD_V) %>% 
+  mutate(diffSlopeQ97.5 = Q97.5_DiaTD_V - Q97.5_DiaASD_V) %>%
+  mutate(formulaEst = diffInterceptEst + 2.5 * diffSlopeEst) %>% 
+  mutate(formulaQ2.5 = diffInterceptQ2.5 + 2.5 * diffSlopeQ2.5) %>%
+  mutate(formulaQ97.5 = diffInterceptQ97.5 + 2.5 * diffSlopeQ97.5)
+#plotting for intercept - the plots show the span of model parameters for each set of simulated data
+ powerdata %>% 
+ ggplot(aes(x = reorder(seed, diffInterceptQ2.5), y = diffInterceptEst , ymin = diffInterceptQ2.5, ymax = diffInterceptQ97.5)) +
+  geom_hline(yintercept = c(0, .5), color = "white") +
+  geom_pointrange(fatten = 1/2) +
+  scale_x_discrete("for intercepts", breaks = NULL) +
+  ylab(expression(beta[1])) +
+  coord_cartesian(ylim = c(-.5, 1.3))
+#power analysis for intercept
+ powerdata %>% 
+  mutate(checkInt = ifelse(diffInterceptQ2.5 > 0, 1, 0)) %>% 
+  summarise(powerInt = mean(checkInt))
+#plot for slope
+ powerdata %>% 
+ ggplot(aes(x = reorder(seed, diffSlopeQ2.5), y = diffSlopeEst , ymin = diffSlopeQ2.5, ymax = diffSlopeQ97.5)) +
+  geom_hline(yintercept = c(0, .5), color = "white") +
+  geom_pointrange(fatten = 1/2) +
+  scale_x_discrete("for slopes", breaks = NULL) +
+  ylab(expression(beta[1])) +
+  coord_cartesian(ylim = c(-.5, 1.3))
+#power analysis for slope
+powerdata %>% 
+  mutate(checkSlo = ifelse(diffSlopeQ2.5 > 0, 1, 0)) %>% 
+  summarise(powerSlo = mean(checkSlo))
+ #plot for formula - the formula approach is a bit janky, but since we dont just have random intercepts, but also slopes, we need to improvise: the formula is difference of intercepts + difference of slopes * 2.5(mean of Visit) -> this gives us the mean difference between the diagnoses
+  powerdata %>% 
+ ggplot(aes(x = reorder(seed, formulaQ2.5), y = formulaEst , ymin = formulaQ2.5, ymax = formulaQ97.5)) +
+  geom_hline(yintercept = c(0, .5), color = "white") +
+  geom_pointrange(fatten = 1/2) +
+  scale_x_discrete("for formula", breaks = NULL) +
+  ylab(expression(beta[1])) +
+  coord_cartesian(ylim = c(-.5, 1.3))
+ #power analysis for formula
+  powerdata %>% 
+  mutate(checkformula = ifelse(formulaQ2.5 > 0, 1, 0)) %>% 
+  summarise(powerformula = mean(checkformula))
+```
+```{r}
+#precision time - precision is calculated by the width of the Confidence Intervals
+#intercept
+powerdata <-powerdata%>% 
+  mutate(widthInt = abs(diffInterceptQ97.5 - diffInterceptQ2.5))
+
+powerdata%>% 
+  mutate(checkInt = ifelse(widthInt < .7, 1, 0)) %>% 
+  summarise(`proportion below 0.7` = mean(checkInt),
+            `average width`        = mean(widthInt))
+#slope
+powerdata <-powerdata%>% 
+  mutate(widthSlo = abs(diffSlopeQ97.5 - diffSlopeQ2.5))
+
+powerdata%>% 
+  mutate(checkSlo = ifelse(widthSlo < .7, 1, 0)) %>% 
+  summarise(`proportion below 0.7` = mean(checkSlo),
+            `average width`        = mean(widthSlo))
+#formula
+powerdata <-powerdata%>% 
+  mutate(widthformula = abs(formulaQ97.5 - formulaQ2.5))
+
+powerdata%>% 
+  mutate(checkformula = ifelse(widthformula < .7, 1, 0)) %>% 
+  summarise(`proportion below 0.7` = mean(checkformula),
+            `average width`        = mean(widthformula))
 
 ```
 ### NHST type 'significance' approach:
@@ -610,6 +742,7 @@ Relying on the model(s) you trained in part 2 of the exercise, create prediction
 
 ```{r}
 
-
+fixef <- fixef(f_m) %>% 
+head(fixef)
 ```
 
