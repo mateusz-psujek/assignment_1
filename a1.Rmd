@@ -9,7 +9,7 @@ date: "2022-08-15"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-library('tidyverse', 'brms', 'rstan', 'conflicted')
+pacman::p_load(tidyverse, brms, tidybayes, rstan, conflicted)
 
 
 conflict_scout()
@@ -201,9 +201,11 @@ sim_data %>%
 
 ggplot(sim_data)+
   geom_density(aes(ind_int, fill = diagnosis, alpha = 0.2))
+ggsave('ind_slope.png')
 
 ggplot(sim_data)+
   geom_density(aes(ind_slope, fill = diagnosis, alpha = 0.2))
+ggsave('ind_intercept.png')
 ```
 
 
@@ -218,6 +220,7 @@ ggplot(sim_data)+
 ggplot(sim_data)+
   geom_density(aes(mlu, fill = diagnosis, alpha = 0.2))+
   facet_wrap(~ visit)
+ggsave('plot1.png')
 ```
 ## Analysing the data
 Remember the usual bayesian workflow:
@@ -279,7 +282,7 @@ f_m_prior <- brm(
   family = lognormal,
   prior = priors,
   sample_prior = 'only',
-#  backend = 'cmdstanr',
+  backend = 'cmdstanr',
   cores = 3,
   control = list(
     adapt_delta = 0.99,
@@ -300,7 +303,7 @@ f_m <- brm(
   family = lognormal,
   prior = priors,
   sample_prior = TRUE,
-#  backend = 'cmdstanr',
+  backend = 'cmdstanr',
   cores = 3,
   control = list(
     adapt_delta = 0.99,
@@ -315,7 +318,7 @@ fg_m <- brm(
   family = lognormal,
   prior = priors,
   sample_prior = T,
- # backend = 'cmdstanr',
+  backend = 'cmdstanr',
   cores = 3,
   control = list(
     adapt_delta = 0.99,
@@ -420,7 +423,7 @@ models_data <- map_df(
     family = lognormal,
     prior = new_priors,
     sample_prior = TRUE,
-  #  backend = 'cmdstanr',
+    backend = 'cmdstanr',
     cores = 3,
     control = list(
       adapt_delta = 0.99,
@@ -594,24 +597,33 @@ update_fg <- function(seed, n){
   df <- df %>% slice(3)
 }
 
-power_data <- tibble(N = c(10,100, by = 10)) %>% 
+power_data <- tibble(N = c(10,150, by = 10)) %>% 
    rowwise %>% 
-   mutate(seed = list(seq(1,100, by = 1))) %>% 
+   mutate(seed = list(seq(1,50, by = 1))) %>% 
    unnest(seed) %>% 
    mutate(dfs = map2(.x = seed, .y = N, .f = ~ update_fg(.x, .y))) %>% 
    unnest(dfs)
 
   
-map(.x = power_data %>% group_split(n) %>% filter(variable == 'diff'),
+map(.x = power_data %>% filter(variable == 'diff') %>% group_split(N),
     .f = ~
         ggplot(.x, aes(x = seed %>% reorder(lower), y = value, ymin = lower, ymax = upper)) +
           geom_hline(yintercept = c(0, 0.2), color = "white") +
           geom_pointrange(fatten = 1/2) +
           labs(title = "Difference of mean slope parameters between the two groups",
-               subtitle = paste0("N = ", n),
+               subtitle = paste0("N = ",  .x$N),
                x = "seed (i.e., simulation index)",
                y = "value")
 )
+
+ ggplot(power_data, aes(x = seed %>% reorder(lower), y = value, ymin = lower, ymax = upper)) +
+          geom_hline(yintercept = c(0, 0.2), color = "white") +
+          geom_pointrange(fatten = 1/2) +
+          labs(title = "Difference of mean slope parameters between the two groups",
+               subtitle = paste0("N = ",  power_data$N),
+               x = "seed (i.e., simulation index)",
+               y = "value")+
+   facet_wrap(~ N)
 ```
 ### Accuraccy (the width of credible intervals) approach:
 ```{r}
@@ -636,8 +648,39 @@ powerdata%>%
 - Include additional predictors in your model of language development (N.B. not other indexes of child language: types and tokens, that'd be cheating). Identify the best model, by conceptual reasoning, model comparison or a mix. Report the model you choose (and name its competitors, if any) and discuss why it's the best model.
 
 ```{r}
-
+data <- read_csv('data_clean.csv') %>%
+  rename_with(.cols = everything(), ~ str_to_lower(.x)) %>%
+  rename(id = child.id, mlu = chi_mlu)
 ```
+```{r}
+data <- data %>% 
+  mutate(
+    ethnicity = str_replace_all(ethnicity, c('Bangledeshi' = 'Asian', 
+                                            'Bangladeshi' ='Asian', 
+                                            'White American' = 'White')) %>%
+                replace(ethnicity == 'Latino' | ethnicity == 'Hispanic', 'Latino/Hispanic'))
+data_s <- data %>% filter(visit == 1)
+
+
+
+data_s %>% count(diagnosis)
+data_s %>% count(diagnosis, gender) 
+data_s %>% count(diagnosis, gender, ethnicity)
+data_s %>% count(ethnicity) %>% mutate(pct = n / (n %>% sum), pct = round(pct, 2))
+data_s %>% group_by(diagnosis) %>% summarise(across(c(verbaliq1, nonverbaliq1), ~ mean(.x, na.rm = TRUE)))
+
+gg <- ggplot(data_s, aes(x = diagnosis, fill = diagnosis, alpha = 0.4))
+gg + geom_violin(aes(y = verbaliq1))
+gg + geom_violin(aes(y = nonverbaliq1))
+
+
+rm(data_s, gg)
+```
+### Describing the sample:
+The number of participants in each group is comparable, but the 'TD' group is slightly bigger(35 vs. 31). The gender(female xor male) distribution within both groups is similarly unequal with approx 5 times less female then male participants in each group (29 and 6 for 'TD'; 26 and 5 for 'ASD'). The sample is widely dominated by 'White' ethnicity (86% of all participants). The rest of the participants if divided between different ethnic minorities of only 1 or 2 participants each (2% to 3% of all participants). The 2 groups vary widely in terms of the ethnic diversity with only 1 participant with ethnicity different than 'White' in the TD group. The mean of both verbal and nonverbal IQ are similar in both groups. However, the ASD group shows greater variance in both parameters. In conclusion, the groups seem to be balanced (there are similar enough in measures other then their diagnosis). However, neither of the samples shouldn't be treated as representative for populations other than white males.
+
+
+
 
 
 Part 3 - From explanation to prediction
