@@ -120,4 +120,8 @@ mcmc_plot(model, type = 'neff')
 pp_check(f_m, ndraws = 100)
 pp_check(fg_m, ndraws = 100)
 ```
-#####
+##### Prior-posterior update checks
+```{r}
+pp_update_plot(model)
+```
+

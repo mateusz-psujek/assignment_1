@@ -329,7 +329,7 @@ For some reason, in the case of varying slopes by diagnosis the prior function s
 From what we managed to find only the possibility of setting the priors separately for each group in gr(by = x) might be an open issue in brms (https://github.com/paul-buerkner/brms/issues/874). Because of that we only made prior - posterior plots for the 'ASD' group.
 ```{r}
 
-pp_update_plot <- function(model, priors){
+pp_update_plot <- function(model){
 
 df <- left_join(spread_draws(model, `.*b_.*`, regex = TRUE),
              spread_draws(model, `.*sd_.*`, regex = TRUE)) %>% 
