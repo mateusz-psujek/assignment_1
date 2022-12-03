@@ -1,0 +1,123 @@
+---
+title: "a1_part2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+pacman::p_load(tidyverse, brms, tidybayes, rstan, conflicted)
+
+
+conflict_scout()
+conflict_prefer('ar', 'brms')
+conflict_prefer('filter', 'dplyr')
+conflict_prefer('lag', 'dplyr')
+```
+
+# Part 2 - Strong in the Bayesian ken, you are now ready to analyse the actual data
+
+- Describe your sample (n, age, gender, clinical and cognitive features of the two groups) and critically assess whether the groups (ASD and TD) are balanced. Briefly discuss whether the data is enough given the simulations in part 1.
+- Describe linguistic development (in terms of MLU over time) in TD and ASD children (as a function of group). Discuss the difference (if any) between the two groups.
+- Describe individual differences in linguistic development: do all kids follow the same path? Are all kids reflected by the general trend for their group?
+
+- Include additional predictors in your model of language development (N.B. not other indexes of child language: types and tokens, that'd be cheating). Identify the best model, by conceptual reasoning, model comparison or a mix. Report the model you choose (and name its competitors, if any) and discuss why it's the best model.
+
+##### loading the data
+```{r}
+data <- read_csv('data_clean.csv') %>%
+  rename_with(.cols = everything(), ~ str_to_lower(.x)) %>%
+  rename(id = child.id, mlu = chi_mlu)
+```
+## DeScribing the samples
+```{r}
+data <- data %>% 
+  mutate(
+    ethnicity = str_replace_all(ethnicity, c('Bangledeshi' = 'Asian', 
+                                            'Bangladeshi' ='Asian', 
+                                            'White American' = 'White')) %>%
+                replace(ethnicity == 'Latino' | ethnicity == 'Hispanic', 'Latino/Hispanic'))
+data_s <- data %>% filter(visit == 1)
+
+
+
+data_s %>% count(diagnosis)
+data_s %>% count(diagnosis, gender) 
+data_s %>% count(diagnosis, gender, ethnicity)
+data_s %>% count(ethnicity) %>% mutate(pct = n / (n %>% sum), pct = round(pct, 2))
+data_s %>% group_by(diagnosis) %>% summarise(across(c(verbaliq1, nonverbaliq1), ~ mean(.x, na.rm = TRUE)))
+
+gg <- ggplot(data_s, aes(x = diagnosis, fill = diagnosis, alpha = 0.4))
+gg + geom_violin(aes(y = verbaliq1))
+gg + geom_violin(aes(y = nonverbaliq1))
+
+
+rm(data_s, gg)
+```
+##### Conclusions:
+The number of participants in each group is comparable, but the 'TD' group is slightly bigger(35 vs. 31). The gender(female xor male) distribution within both groups is similarly unequal with approx 5 times less female then male participants in each group (29 and 6 for 'TD'; 26 and 5 for 'ASD'). The sample is widely dominated by 'White' ethnicity (86% of all participants). The rest of the participants if divided between different ethnic minorities of only 1 or 2 participants each (2% to 3% of all participants). The 2 groups vary widely in terms of the ethnic diversity with only 1 participant with ethnicity different than 'White' in the TD group. The mean of both verbal and nonverbal IQ are similar in both groups. However, the ASD group shows greater variance in both parameters. In conclusion, the groups seem to be balanced (there are similar enough in measures other then their diagnosis). However, neither of the samples shouldn't be treated as representative for populations other than white males.
+
+## Fitting the models
+```{r}
+priors <- priors
+#keeping priors from part 1 now, ill see whether i should change them later
+
+model_prior <- brm(
+  fg,
+  data = data,
+  family = lognormal,
+  prior = priors,
+  sample_prior = 'only',
+  backend = 'cmdstanr',
+  cores = 3,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+)
+```
+##### Prior predictive checks
+```{r}
+pp_check(model_prior)
+```
+
+```{r}
+model <- brm(
+  fg,
+  data = data,
+  family = lognormal,
+  prior = priors,
+  sample_prior = T,
+  backend = 'cmdstanr',
+  cores = 3,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
+)
+```
+```{r}
+summary(model)
+```
+
+##### Checking convergance:
+```{r}
+# launch_shinystan(f_m) # - very nice for exploring and diagnosing the model, but opens up in a new window
+
+mcmc_plot(model, type = 'trace') + 
+    theme_classic() + 
+    scale_color_manual(values=c("#E66101", "#998EC3", "#542788", "#F1A340")) + 
+    ylab("") + 
+    xlab("Iteration") + 
+    labs(subtitle = 'Trace Plots')
+
+mcmc_plot(model, type = 'rhat_hist')
+mcmc_plot(model, type = 'neff')
+```
+##### Posterior predictive checks:
+```{r}
+pp_check(f_m, ndraws = 100)
+pp_check(fg_m, ndraws = 100)
+```
+#####
