@@ -555,9 +555,11 @@ xdiff <- update_fg(10,1) #after adding the last mutate
 
 
 ```{r}
-power_data <- expand_grid(N = seq(10, 150, by = 110), seed = 1:100) %>% 
+power_data <- expand_grid(N = seq(10, 110, by = 20), seed = 1:100) %>% 
    mutate(dfs = update_fg(seed, N)) %>% 
    unnest(dfs)
+
+write_rds(power_data, 'rdata/power_data.Rds')
 ```
 ### NHST type 'significance' approach:
 ```{r}
@@ -570,8 +572,24 @@ power_data %>%
                x = "seed (i.e., simulation index)",
                y = "value")+
           facet_grid(~ N)
+
+
+power_data %>%
+  mutate(signif = if_else(lower*upper > 0, 1, 0)) %>% 
+  group_by(N) %>% 
+  summarise(
+    p_signif = mean(signif),
+    se = sqrt(p_signif*(1 - p_signif) / n())
+         ) %>% 
+  mutate(lower.95 = ymin = p_signif - 1.96*se, 
+         upper.95 = p_signif + 1.96*se) %>% 
+  ggplot(aes(x = N, y = p_signif, ymin = lower.95, ymax = upper.95)) +
+    geom_pointrange() +
+    geom_line()
+  
+  
 ```
-### Accuraccy (the width of credible intervals) approach:
+### Accuracy in parameter estimation (precision) approach :
 
 ```{r}
 power_data %>% 
@@ -580,89 +598,35 @@ power_data %>%
   ungroup %>% 
   ggplot(aes(x = ci_width)) %>% 
   geom_bar(binwidth = 0.1)
-```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# old code for the power analysis
-
-
-```{r}
-
-update_fg <- function(seed, n){
-  df <- 
-    update(fg_m,
-       newdata = simulate_data(seed = seed, n = n),
-       seed = seed, 
-       iter = 1000) %>% 
-    gather_draws(c(`b_diagnosisasd:visit`,`b_diagnosistd:visit`)) %>%                                                mean_qi(.width = 0.95) %>% 
-        rename_with(.cols = everything(), ~ str_remove_all(.x, fixed('.'))) %>%
-        add_row
-    
-    df$variable[[3]] <- 'diff'
-    df$value[[3]] <- df$value[[2]] - df$value[[1]]
-    df$lower[[3]] <- df$lower[[2]]- df$lower[[1]]
-    df$upper[[3]] <- df$upper[[2]] - df$upper[[1]]
-    
-  df <- df %>% slice(3)
-}
-
-power_data <- tibble(N = c(10,150, by = 10)) %>% 
-   rowwise %>% 
-   mutate(seed = list(seq(1,50, by = 1))) %>% 
-   unnest(seed) %>% 
-   mutate(dfs = map2(.x = seed, .y = N, .f = ~ update_fg(.x, .y))) %>% 
-   unnest(dfs)
-
-  
-map(.x = power_data %>% filter(variable == 'diff') %>% group_split(N),
-    .f = ~
-        ggplot(.x, aes(x = seed %>% reorder(lower), y = value, ymin = lower, ymax = upper)) +
-          geom_hline(yintercept = c(0, 0.2), color = "white") +
-          geom_pointrange(fatten = 1/2) +
-          labs(title = "Difference of mean slope parameters between the two groups",
-               subtitle = paste0("N = ",  .x$N),
-               x = "seed (i.e., simulation index)",
-               y = "value")
-)
-
- ggplot(power_data, aes(x = seed %>% reorder(lower), y = value, ymin = lower, ymax = upper)) +
-          geom_hline(yintercept = c(0, 0.2), color = "white") +
-          geom_pointrange(fatten = 1/2) +
-          labs(title = "Difference of mean slope parameters between the two groups",
-               subtitle = paste0("N = ",  power_data$N),
-               x = "seed (i.e., simulation index)",
-               y = "value")+
-   facet_wrap(~ N)
-```
-### Accuraccy in parameter estimation approach:
-```{r}
-powerdata <-powerdata%>% 
-  mutate(ci_width = abs(diff_upper - diff_lower))
 
 powerdata%>% 
-  mutate(prec_check = ifelse(ci_width < 0.7, 1, 0)) %>% 
-  summarise(`proportion below 0.7` = mean(prec_check),
-            `average width`        = mean(ci_width))
+  mutate(check = ifelse(ci_width < 0.7, 1, 0)) %>% 
+  summarise(`proportion below 0.7` = mean(check),
+            `average width` = mean(ci_width))
+
+
+power_data %>%
+  mutate(precise = if_else(width < 0.7, 1, 0)) %>% 
+  group_by(N) %>% 
+  summarise(
+    p_precise = mean(precise),
+    se = sqrt(p_precise*(1 - p_precise) / n())
+         ) %>% 
+  mutate(lower.95 = ymin = p_precise - 1.96*se, 
+         upper.95 = p_precise + 1.96*se) %>% 
+  ggplot(aes(x = N, y = p_precise, ymin = lower.95, ymax = upper.95)) +
+    geom_pointrange() +
+    geom_line()
+  
 ```
 ### Conlusions:
+```
 
+
+
+
+
+
+
+## Conclusions
