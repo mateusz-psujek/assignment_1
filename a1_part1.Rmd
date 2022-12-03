@@ -449,13 +449,12 @@ est <- rbind(model %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
   select(!c(.variable, .point, .interval)) %>% 
   rename_with(.cols = everything(), ~ paste0("est_", .x) %>% str_remove_all(fixed('.'))) %>% 
   mutate(across(where(is.numeric), exp))
+# you have to change this i guess (look Riccardo's feedback)
 
 if (nrow(est) == 6){
   est <- rbind(est, est %>% slice(c(5,6)))
   } else
     est <- est
-
-x <- rbind(est, est %>% slice(c(5,6)))
 
 t_value <- p %>% ungroup %>% filter(!parameter == 'error')
 t_value <- rbind(t_value %>% select(mu) %>% rename('t_value' = mu),

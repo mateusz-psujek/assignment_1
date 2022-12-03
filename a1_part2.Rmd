@@ -125,3 +125,22 @@ pp_check(fg_m, ndraws = 100)
 pp_update_plot(model)
 ```
 
+## Model exploration
+```{r}
+conditional_effects(model)
+```
+##### Hypothesis testing
+```{r}
+hypothesis(model, 'diagnosistd:visit - diagnosisasd:visit > 0') 
+```
+##### Plotting model estimates
+```{r}
+#you will have to transform the model from log scale now i guess
+
+
+
+
+```
+
+
+
