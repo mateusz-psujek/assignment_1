@@ -56,7 +56,7 @@ BONUS questions for Part 1: what if the difference between ASD and TD was 0? how
 ### Plotting the real MLU data to see how real MLU data looks more or less
 ```{r}
 
-real_data <- read_csv('a0_data.csv')
+real_data <- read_csv('a0/a0_data.csv')
 
 gg_real_mlu <- ggplot(real_data, aes(x = chi_mlu, fill = diagnosis, alpha = 0.3))+
   geom_density()+
@@ -355,20 +355,24 @@ pmap(.l = list(.x = gg_priors, .y = gg_posteriors, .t = gg_titles),
 
 
 ```{r}
-pp_update_plot(f_m, priors)
+pp_update_plot(f_m)
 ```
 
 
 ```{r}
-pp_update_plot(fg_m, priors)
+pp_update_plot(fg_m)
 ```
+```{r}
+save.image('rdata/a1_part1.Rdata')
+```
+
 ### Sensitivity analysis:
 ```{r}
-sds <-  seq(0.1, 1, by = 0.1)
-
 sensitivity_analysis<- function(sds, formula){
 
-models_data <- map_df(
+sensitivity_data <- tibble()
+  
+sensitivity_data <- map_df(
   .x = sds,
   .f = function(.x){
   
@@ -386,43 +390,51 @@ models_data <- map_df(
     control = list(
       adapt_delta = 0.99,
       max_treedepth = 20)
-  )
+    )
   
   
-    rbind(models_data,
-          gather_draws(model, c(`b_diagnosisasd:visit`, `b_diagnosistd:visit`)) %>% median_qi(.width = 0.95))
-})
+    rbind(sensitivity_data,
+          gather_draws(model, c(`b_diagnosisasd:visit`, `b_diagnosistd:visit`)) %>% 
+            median_qi(.width = 0.95) %>% 
+            mutate(sd = .x)
+          )
+  })
+}
+```
 
-write_rds(models_data, paste0(deparse('rdata/', substitute(formula)), "_sensitivity.Rds"))
+```{r results = 'hide'}
+sds <-  seq(0.1, 1, by = 0.1)
+
+sensitivity_data_f <- sensitivity_analysis(sds = sds, formula = f)
+
+sensitivity_data_fg <- sensitivity_analysis(sds = sds, formula = fg)
 
 
-map(.x = models_data %>% group_split(.variable),
-    .f = ~ ggplot(data = .x, aes(x = sds, y = .value)) +
-            geom_point(size = 3) +
-            geom_pointrange(aes(ymin = .lower, ymax = .upper)) +
-            ylim(0.1, 0.3) +
-            labs(x = "Standard Deviation of Slope Prior", 
-                 y = "Posterior Estimate for slope", 
-                 title = paste0("'", .x$.variable, "'"),
-                 subtitle = "Sensitivity analysis for multi-level model") +
-            theme_bw() +
-            theme(plot.title = element_text(hjust = 0.5, size = 15),
-                  axis.title.x = element_text(size = 13),
-                  axis.text.y = element_text(size = 12),
-                  axis.text.x = element_text(size = 12),
-                  axis.title.y = element_text(size = 13))
 
-)}
+sensitivity_data <- bind_rows(
+  sensitivity_data_f %>% mutate(formula = 'f'),
+  sensitivity_data_fg %>% mutate(formula = 'fg')
+)
+write_rds(sensitivity_data_f, 'rdata/sensitivity_data.Rds')
 ```
 
 
 ```{r}
-sensitivity_analysis(sds = sds, formula = f)
-```
-
-
-```{r}
-sensitivity_analysis(sds = sds, formula = fg)
+sensitivity_data %>% 
+  ggplot(aes(x = sd, y = .value)) +
+    geom_point(size = 3) +
+    geom_pointrange(aes(ymin = .lower, ymax = .upper)) +
+    ylim(0.1, 0.3) +
+    labs(x = "Standard Deviation of Slope Prior", 
+         y = "Posterior Estimate for slope",
+         subtitle = "Sensitivity analysis for multi-level model") +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, size = 15),
+          axis.title.x = element_text(size = 13),
+          axis.text.y = element_text(size = 12),
+          axis.text.x = element_text(size = 12),
+          axis.title.y = element_text(size = 13)) +
+    facet_grid(.variable ~ formula, switch = 'y')
 ```
 ### Model exploration
 #### Hypothesis testing
@@ -619,13 +631,8 @@ power_data %>%
     geom_line()
   
 ```
-### Conlusions:
+## Conlusions:
+```{r}
+
 ```
 
-
-
-
-
-
-
-## Conclusions
