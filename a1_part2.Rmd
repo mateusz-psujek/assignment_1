@@ -135,10 +135,6 @@ hypothesis(model, 'diagnosistd:visit - diagnosisasd:visit > 0')
 ```
 ##### Plotting model estimates
 ```{r}
-#you will have to transform the model from log scale now i guess
-
-
-
 
 ```
 
