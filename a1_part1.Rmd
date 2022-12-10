@@ -12,8 +12,9 @@ conflict_scout()
 conflict_prefer('ar', 'brms')
 conflict_prefer('filter', 'dplyr')
 conflict_prefer('lag', 'dplyr')
+
 ```
-## Part 1 - Simulating data
+# Part 1 - Simulating data
 
 Before we even think of analyzing the data, we should make sure we understand the problem, and we plan the analysis. To do so, we need to simulate data and analyze the simulated data (where we know the ground truth).
 
@@ -55,133 +56,149 @@ BONUS questions for Part 1: what if the difference between ASD and TD was 0? how
 
 ### Plotting the real MLU data to see how real MLU data looks more or less
 ```{r}
-
 real_data <- read_csv('a0/a0_data.csv')
 
-gg_real_mlu <- ggplot(real_data, aes(x = chi_mlu, fill = diagnosis, alpha = 0.3))+
-  geom_density()+
-  facet_wrap(~ visit)
+gg_real_mlu <- ggplot(real_data, aes(x = chi_mlu, fill = diagnosis))+
+  geom_density(alpha = 0.7)+
+  facet_grid(~ visit) +
+  ggtitle('Real data')
 
 gg_real_mlu
 ```
-### Making a tibble with the distribution parameters
+
+### Describing / explaining the simulation process
+
+Given MLU ($X_{MLU}$) is log-normally distributed, it is described to be:
+
+$$
+X_{MLU} = e^{\mu +\sigma Z}
+$$
+Where $Z$ is the standard normal distribution.
+
+
+The $\mu$ and $\sigma$ parameters here are however "**the expected value (or mean) and standard deviation of the variable's natural logarithm, not the expectation and standard deviation of $X_{MLU}$ itself**" - paraphrasing and quoting from: https://en.wikipedia.org/wiki/Log-normal_distribution#Generation_and_parameters
+
+To obtain these parameters given the desired $\mu$ and $\sigma^2$ of the variable ($X_MLU$) itself we used these two functions(copy-pasted from the same article):
+
+$$
+\mu =\ln \left({\frac {\mu _{MLU}^{2}}{\sqrt {\mu _{MLU}^{2}+\sigma _{MLU}^{2}}}}\right)
+$$
+
+and
+$$
+\sigma ^{2}=\ln \left(1+{\frac {\sigma _{MLU}^{2}}{\mu _{MLU}^{2}}}\right)
+$$
+Where:
+    $\mu_{MLU}$ is equal to $\text{indiviudal intercept} + \text{individual slope}*(\text{visit} -1)$
+  and
+    $\sigma^2_{MLU}$ is equal to $0.2$- i.e the measurment error
+
+
+### Creating a function
 ```{r}
-#- average MLU for ASD and TD: 1.5 (remember the populations are matched for linguistic ability at first visit)
-#- average individual variability in initial MLU for ASD 0.5; for TD 0.3 (remember ASD tends to be more heterogeneous)
-#- average change in MLU for ASD: 0.4; for TD 0.6 (ASD is supposed to develop less)
-#- average individual variability in change for ASD 0.4; for TD 0.2 (remember ASD tends to be more heterogeneous)
-#- error is identified as 0.2
-
-# mlu = intercept +visit*beta + error
-# mlu = G(i_mu, i_sd) + G(v_mu, v_sd) + G(e_mu, e_sd)
-
-
-#to_do list:
-  # - might be more suitable to use something else than the normal distirubtion for the error
-  # - understand the log normal distribution mathematically more
-  # - understand why the prior check gets such a crazily wide scale
-  # - find a way to could find the number of parameters for which the effective samples were below 0.1 of the total sample number
-
-# Questions:
-#   - why does the prior pp_check show negative predictions???
-#   - how to set the sd prior for both asd and td for the gr(by = diagnosis) model (seems to be an open issue in brms <link>)
-
-log_mu <- function(mu, sd){log(mu^2/sqrt(sd^2 + mu^2))}
-log_sd <- function(mu, sd){sqrt(log(1 + sd^2/mu^2))} #taken from https://en.wikipedia.org/wiki/Log-normal_distribution#Arithmetic_moments
-
-
-p <- tibble(parameter = c('intercept', 'slope', 'error') %>% rep(2),
-            diagnosis = c('asd', 'td') %>% rep(each = 3) %>% as_factor,
-            mu = c(1.5, 0.4, 0, 1.5, 0.6, 0),
-            sd = c(0.5, 0.4, 0.2, 0.3, 0.2, 0.2)) %>%
-  group_by(parameter) %>% 
-  mutate(mu_log = if_else(parameter == 'error', mu, log_mu(mu, sd)),
-         sd_log = if_else(parameter == 'error', sd, log_sd(mu, sd))
-         )
-
-
-
-head(p)
+log_mu <- function(mu, sigma){log(mu^2/sqrt(sigma^2 + mu^2))}
+log_sigma <- function(mu, sigma){sqrt(log(1 + sigma^2/mu^2))} 
 ```
-### Simulating the data
 ```{r}
 
-# n - the number of participants in each condition
-
-
-simulate_data <- function(seed, n){
-
-  set.seed(seed)
+simulate_data <- function(n = 200, 
+                          seed,
+                          intercept_mu_asd = 1.5, intercept_sd_asd = 0.5,
+                          intercept_mu_td = 1.5, intercept_sd_td = 0.5,
+                          beta_mu_asd = 0.4, beta_sd_asd = 0.4,
+                          beta_mu_td = 0.6, beta_sd_td = 0.2,
+                          error = 0.2
+                          ){
   
-  df <- tibble(id = seq(1, (n*2), by = 1) %>% as_factor) %>% 
-    mutate(diagnosis = rep(c('asd', 'td'), each = n) %>% as_factor) %>%
-    slice(rep(seq_along(id), each = 6)) %>% 
+  set.seed = seed
+  
+    tibble(id = 1:n,
+         diagnosis = rep(c('asd', 'td'), times = n/2)
+         ) %>% 
+    expand_grid(visit = 1:6) %>% 
     group_by(id) %>% 
     mutate(
-           ind_int = if_else(diagnosis == 'asd',
-                             rlnorm(1, mean = p$mu_log[[1]], sd = p$sd_log[[1]]),
-                             rlnorm(1, mean = p$mu_log[[4]], sd = p$sd_log[[4]])),
-           
-           ind_slope = if_else(diagnosis == 'asd',
-                               rlnorm(1, mean =  p$mu_log[[2]], sd = p$sd_log[[2]]),
-                               rlnorm(1, mean =  p$mu_log[[5]], sd = p$sd_log[[5]])),
-           
-          visit = seq(1, 6, by = 1),
-           
-          t_mlu = if_else(visit == 1, ind_int, ind_int + ind_slope*(as.numeric(visit) - 1)),
-          
-          mlu = t_mlu + rnorm(seq_along(n()), mean = p$mu[[3]], sd = p$sd[[3]])
-          )
-          
-  return(df)
+         ind_intercept = ifelse(
+           diagnosis == 'asd',
+           rnorm(1, intercept_mu_asd, intercept_sd_asd),
+           rnorm(1, intercept_mu_td, intercept_sd_td)
+         ),
+         ind_slope = if_else(
+           diagnosis == 'asd',
+           rnorm(1, beta_mu_asd, beta_sd_asd),
+           rnorm(1, beta_mu_td, beta_sd_td)
+         )
+    ) %>% 
+    rowwise %>% 
+    mutate(
+      mlu = rnorm(
+        n = 1,
+        mean = log_mu(
+          mu = ind_intercept + ind_slope * (visit - 1),
+          sigma = error
+          ),
+        sd = log_sigma(
+          mu = ind_intercept + ind_slope * (visit - 1),
+          sigma = error
+        )
+      ),
+      
+      mlu = mlu %>% exp
+    )
 }
+```
+### Checking if everything worked fine
+```{r}
+sim_data <- simulate_data(seed = 123)
 
-sim_data <- simulate_data(1, 10000) #such a number of participants is unrealistically high, but the point here is just to check whether there are any disprepancies between the data generative process described in the instructions and the one we managed to code. As well as how does data generated by the simulation compare to the real data.
+head(sim_data)
+tail(sim_data)
+
 ```
 
-### Checking whether all worked fine
 ```{r}
+#making a very large dataset to make sure any potential errors aren't due too random noise
+check <- simulate_data(n = 10000, seed = 123)
 
-glimpse(sim_data)
 
-sim_data %>% 
+check %>% 
   group_by(diagnosis) %>% 
-  summarise(across(starts_with('ind'), list(mean = mean, sd = sd), .names = '{.col}_{.fn}'))
+  summarise(across(starts_with('ind'), list(mean = mean, sd = sd), .names = '{.col}_{.fn}')) %>% 
+  mutate(across(where(is.numeric), ~ .x %>% round(3)))
+
 
 
 # "This would mean that on average the difference between ASD and TD participants is 0 at visit 1, 0.2 at visit 2, 0.4 at visit 3, 0.6 at visit 4, 0.8 at visit 5 and 1 at visit 6."
-
-sim_data %>% 
+check %>% 
   group_by(visit) %>% 
-  summarise(avg_diff = mean(t_mlu[diagnosis == 'td']) - mean(t_mlu[diagnosis == 'asd']))
+  summarise(diff = (mean(mlu[diagnosis == 'asd']) - mean(mlu[diagnosis == 'td'])) %>% round(3))
+
+#checking the differences between the groups
+#beta_mu_asd = 0.4 and beta_mu_td = 0.4
+
+check %>% 
+  group_by(diagnosis, visit) %>%
+  summarise(mean_mlu = mean(mlu) %>% round(3)) %>% 
+      mutate(diff_mlu = mean_mlu - lag(mean_mlu))
 ```
 
-
-```{r}
-# plotting the resulting individual integer and slope distributions
-
-ggplot(sim_data)+
-  geom_density(aes(ind_int, fill = diagnosis, alpha = 0.2))
-ggsave('ind_slope.png')
-
-ggplot(sim_data)+
-  geom_density(aes(ind_slope, fill = diagnosis, alpha = 0.2))
-ggsave('ind_intercept.png')
-```
 
 
 ```{r}
 # comparing the simulated data to some real mlu data
 gg_real_mlu
 
-ggplot(sim_data)+
-  geom_density(aes(t_mlu, fill = diagnosis, alpha = 0.2))+
-  facet_wrap(~ visit)
+ggplot(check)+
+  geom_density(aes(mlu, fill = diagnosis), alpha = 0.7)+
+  facet_grid(~ visit) +
+  ggtitle('Simulated data, n = 2000')
 
 ggplot(sim_data)+
-  geom_density(aes(mlu, fill = diagnosis, alpha = 0.2))+
-  facet_wrap(~ visit)
-ggsave('plot1.png')
+  geom_density(aes(mlu, fill = diagnosis),  alpha = 0.7)+
+  facet_grid(~ visit) +
+  ggtitle('Simulated data, n = 100')
+
+rm(check)
 ```
 ## Analysing the data
 Remember the usual bayesian workflow:
@@ -230,13 +247,7 @@ priors <- c(
 
 ```
 
-
-
 ```{r}
-# setting the number of participant lower to make it more realitic for a study setting and decrease the computation time
-sim_data <- simulate_data(1, 100)
-
-
 f_m_prior <- brm(
   f, 
   data = sim_data,
@@ -362,10 +373,6 @@ pp_update_plot(f_m)
 ```{r}
 pp_update_plot(fg_m)
 ```
-```{r}
-save.image('rdata/a1_part1.Rdata')
-```
-
 ### Sensitivity analysis:
 ```{r}
 sensitivity_analysis<- function(sds, formula){
@@ -415,7 +422,9 @@ sensitivity_data <- bind_rows(
   sensitivity_data_f %>% mutate(formula = 'f'),
   sensitivity_data_fg %>% mutate(formula = 'fg')
 )
-write_rds(sensitivity_data_f, 'rdata/sensitivity_data.Rds')
+
+write_rds(sensitivity_data, 'rdata/sensitivity_data.Rds')
+
 ```
 
 
@@ -454,7 +463,7 @@ hypothesis(fg_m, 'diagnosistd:visit - diagnosisasd:visit > 0')
 
 head(p)
 
-
+model <- f_m
 t_vs_est <- function(model){
 est <- rbind(model %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
              model %>% gather_draws(`sd_.*`, regex = T) %>% mean_qi) %>% 
@@ -559,9 +568,6 @@ update_fg <- function(n, seed){
            variable = 'b_diff') %>% 
     na.omit
 }
-#checking if it works
-x <- update_fg(10,1)
-xdiff <- update_fg(10,1) #after adding the last mutate
 ```
 
 
@@ -571,6 +577,7 @@ power_data <- expand_grid(N = seq(10, 110, by = 20), seed = 1:100) %>%
    unnest(dfs)
 
 write_rds(power_data, 'rdata/power_data.Rds')
+save.image('rdata/a1_part1.Rdata') 
 ```
 ### NHST type 'significance' approach:
 ```{r}
