@@ -240,9 +240,6 @@ priors <- c(
   prior(normal(0, 0.4), class = sd, coef = Intercept, group = id),
   prior(normal(0, 0.1), class = sd, coef = visit, group = id)
         )
-
-
-
 ```
 
 ```{r}
