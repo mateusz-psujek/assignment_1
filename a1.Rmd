@@ -846,7 +846,7 @@ data %>%
   ggplot(aes(x = visit, y = mlu, color = diagnosis)) +
     geom_point() +
     geom_line(aes(group = id)) +
-    theme_classic()
+    theme_minimal()
 
 
 #plotting the trajectories of development for children that were outliers in mlu at least during one visit
@@ -863,7 +863,7 @@ data %>%
   ggplot(aes(x = visit, y = mlu, color = diagnosis)) +
     geom_point() +
     geom_line(aes(group = id)) +
-    theme_classic() +
+    theme_minimal() +
     ggtitle("Development trajectories of children identified as outliers")
 
 ```
@@ -874,7 +874,7 @@ m_baseline <- model
 rm(model)
 
 #only environmental factors
-m_env <- bf(mlu ~ 0 + diagnosis + visit:Diagnosis + socialization:diagnosis + (1 + visit | id))
+m_env <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + socialization:diagnosis + (1 + visit | id))
 
 #only cognitive
 m_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + verblaiq:diagnosis + nonverbalis:diagnosis + (1 + visit | id))
@@ -882,8 +882,7 @@ m_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + verblaiq:diagnosis + nonverb
 #environmental and cognitive factors
 m_env_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + nonverbal + socialization + (1 + visit | id))
 
-formulas <- list(m_env = m_env, m_cog = m_cog, m_env_cog = m_env_cog)
-
+formulas <- list(m_baseline = m_baseline, m_env = m_env, m_cog = m_cog, m_env_cog = m_env_cog)
 ```
 
 
@@ -907,6 +906,7 @@ models <- formulas %>%
 ```
 ###### convergance checks
 ```{r}
+#excluding the baseline because it was checked before
 models[-1] %>% 
   map(
     ~ diag_plots <- list(
