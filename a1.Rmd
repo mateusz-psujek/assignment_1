@@ -477,16 +477,14 @@ if (nrow(est) == 6){
   } else
     est <- est
 
-t_value <- p %>% ungroup %>% filter(!parameter == 'error')
-t_value <- rbind(t_value %>% select(mu) %>% rename('t_value' = mu),
-                 t_value %>% select(sd) %>% rename('t_value' = sd))
+t_value <-  c(1.5, 0.4, 1.5, 0.6, 0.5, 0.4, 0.5, 0.2)
 
 t_vs_est <- tibble(term = 
                     map2_chr(.x = rep(c('mu','sd'), each = 4),
                            .y = rep(c('intercept', 'slope'), times = 4),
                            .f = ~ paste0(.x, '_', .y)),
                    diagnosis = rep(c('asd', 'asd', 'td', 'td'), times = 2),
-                   t_value,
+                   t_value <-  c(1.5, 0.4, 1.5, 0.6, 0.5, 0.4, 0.5, 0.2),
                    est)
 
 map(.x = t_vs_est %>% group_split(term),
@@ -808,6 +806,40 @@ hypothesis(model, 'diagnosistd:visit - diagnosisasd:visit > 0')
 ##### Plotting model estimates
 ```{r}
 
+est <- rbind(model %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
+             model %>% gather_draws(`sd_.*`, regex = T) %>% mean_qi) %>% 
+  select(!c(.variable, .point, .interval)) %>% 
+  rename_with(.cols = everything(), ~ paste0("est_", .x) %>% str_remove_all(fixed('.'))) %>% 
+  mutate(across(where(is.numeric), exp))
+
+
+if (nrow(est) == 6){
+  est <- rbind(est, est %>% slice(c(5,6)))
+  } else
+    est <- est
+
+t_vs_est <- tibble(term = 
+                    map2_chr(.x = rep(c('mu','sd'), each = 4),
+                           .y = rep(c('intercept', 'slope'), times = 4),
+                           .f = ~ paste0(.x, '_', .y)),
+                   diagnosis = rep(c('asd', 'asd', 'td', 'td'), times = 2),
+                   t_value,
+                   est)
+
+map(.x = t_vs_est %>% group_split(term),
+    .f = ~ 
+      ggplot(.x, aes(y = est_value, x = diagnosis, color = diagnosis)) +
+        geom_hline(aes(yintercept = t_value, color = diagnosis)) +
+        geom_point(size = 3) +
+        geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
+        labs(title = paste0("'", .x$term, "'"),
+             subtitle = "True value vs. model estimate",
+             y = "True value",
+             x = "Estimated value by diagnosis") +
+        theme_bw() +
+        theme(axis.text.x = element_blank())
+    )
+}
 ```
 ### Individual differences
 ```{r}
@@ -825,7 +857,8 @@ m_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + verblaiq:diagnosis + nonverb
 #environmental and cognitive factors
 m_env_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + nonverbal + socialization + (1 + visit | id))
 
-formulas <- list(m_env, m_cog, m_env_cog)
+formulas <- list(m_env = m_env, m_cog = m_cog, m_env_cog = m_env_cog)
+
 ```
 
 
@@ -859,17 +892,17 @@ models[-1] %>%
   print(diag_plots)
   )
 ```
+###### Posterior-predictive checks
+```{r}
+models[-1] %>% map( ~ pp_update_plot(.x))
+```
 ###### Model comparison
 ```{r}
 models <- models[1] # to_do!!! remove this one after trying it
 ```
 
-
 ```{r}
 kfs <- models %>% map( ~ kfold(.x, folds = 'stratified', group = 'id', K = 5, save_fits = T))
-
-
-
 
 kf_preds <- kfs %>% map( ~ kfold_predict(.x))
 
@@ -881,35 +914,48 @@ rmse <- function(y, yrep){
 kf_rmses <- kf_preds %>% map( ~ rmse(y = .x$y, yrep = .x$yrep))
 
 
-kf_rmse %>% ggplot()
-```
-
-```{r}
-
 #cross-validation performance
-
-  ggplot(aes(x = type, y = rmse, colour = model)) +
+kf_rmses %>% 
+  as.tibble %>% 
+  pivot_longer(cols = everything(),
+               names_to = 'model',
+               values_to = 'RMSE') %>% 
+  ggplot(aes(x = model, y = RMSE, colour = model)) +
     geom_point() +
     theme_minimal() +
-    ggtitle("Cross-validation, k = 5")
+    ggtitle("Accessing performance using cross-validation, k = 5")
+```
 
 
-
-loo_compare(kfs, criterion = 'kfold')
-
+```{r}
 # we know normally it's not a good practice to access performance on the training set, but we wanted to see how it would compare
 
+#to_do run tomorrow with actual data and see whether it works
 preds <- models %>% map(~ posterior_predict(.x))
-training_rmses <- preds %>% map(~ rmse(y = data$mlu, yrep = .x))
+training_rmses <- preds %>% map(~ rmse(y = xdata$mlu, yrep = .x))
 
-row_bind(
-  training_rmses %>% mutate(type = 'training'),
-  kfs_rmses %>% mutate(type = 'cross validation')
+
+bind_rows(
+  training_rmses %>%  
+    as.tibble %>% 
+    pivot_longer(cols = everything(),
+                 names_to = 'model',
+                 values_to = 'RMSE'
+                 ) %>% 
+    mutate(type = 'training'),
+  kf_rmses %>% 
+    as.tibble %>% 
+    pivot_longer(cols = everything(),
+               names_to = 'model',
+               values_to = 'RMSE'
+               ) %>% 
+    mutate(type = 'cross-validation')
 ) %>% 
-  ggplot(aes(x = type, y = rmse, colour = model)) +
+  ggplot(aes(x = type, y = RMSE, colour = model)) +
     geom_point() +
     geom_line() +
-    theme_minimal()
+    theme_minimal() +
+    ggtitle("Comparing performance on training dataset and using cross-validation")
 ```
 ### Conclusions:
 
