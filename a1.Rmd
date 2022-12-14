@@ -506,7 +506,7 @@ t_vs_est(f_m)
 ```{r}
 t_vs_est(fg_m)
 ```
-##### individual effects
+##### individual(random) effects
 
 ```{r}
 
@@ -713,7 +713,7 @@ data %>%
 data_s %>% group_by(diagnosis) %>% summarise(socialisation_mean = mean(socialization, na.rm = T),
                                              socialisation_sd = sd(socialization, na.rm = T))
 
-data %>% 
+data_s %>% 
  ggplot(aes(socialization, fill = diagnosis))+
  geom_density(alpha = 0.6)+
  theme_minimal() +
@@ -721,6 +721,12 @@ data %>%
 
 rm(data_s, gg)
 ```
+```{r}
+#remove zoroes to use lognormal functions
+data <- data %>% 
+  filter(mlu != 0)
+```
+
 ##### Conclusions:
 The number of participants in each group is comparable, but the 'TD' group is slightly bigger(35 vs. 31). The gender(female xor male) distribution within both groups is similarly unequal with approx 5 times less female then male participants in each group (29 and 6 for 'TD'; 26 and 5 for 'ASD'). The sample is widely dominated by 'White' ethnicity (86% of all participants). The rest of the participants if divided between different ethnic minorities of only 1 or 2 participants each (2% to 3% of all participants). The 2 groups vary widely in terms of the ethnic diversity with only 1 participant with ethnicity different than 'White' in the TD group. The mean of both verbal and nonverbal IQ are similar in both groups. However, the ASD group shows greater variance in both parameters. In conclusion, the groups seem to be balanced (there are similar enough in measures other then their diagnosis). However, neither of the samples shouldn't be treated as representative for populations other than white males.
 
@@ -832,8 +838,33 @@ map(.x = est %>% group_split(term),
     )
 
 ```
-### Individual differences
+### Individual(random) differences
 ```{r}
+
+
+data %>% 
+  ggplot(aes(x = visit, y = mlu, color = diagnosis)) +
+    geom_point() +
+    geom_line(aes(group = id)) +
+    theme_classic()
+
+
+#plotting the trajectories of development for children that were outliers in mlu at least during one visit
+
+index <- data %>% 
+  group_by(diagnosis, visit) %>% 
+  filter(
+    (mlu > quantile(mlu, 0.75, na.rm = T) + 1.5*IQR(mlu, na.rm = T) | mlu < quantile(mlu, 0.25, na.rm = T) - 1.5*IQR(mlu, na.rm = T))
+         ) %>% 
+  pull(id)
+
+data %>% 
+  filter(id %in% index) %>% 
+  ggplot(aes(x = visit, y = mlu, color = diagnosis)) +
+    geom_point() +
+    geom_line(aes(group = id)) +
+    theme_classic() +
+    ggtitle("Development trajectories of children identified as outliers")
 
 ```
 
