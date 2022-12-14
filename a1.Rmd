@@ -233,8 +233,6 @@ get_prior(fg,
 
 
 ```{r}
-head(p)
-
 priors <- c(
   prior(normal(0, 0.2), class = b),
   prior(normal(0.4, 0.3), class = b, coef = diagnosisasd),
