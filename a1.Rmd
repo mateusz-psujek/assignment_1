@@ -950,8 +950,6 @@ kf_rmses %>%
 
 ```{r}
 # we know normally it's not a good practice to access performance on the training set, but we wanted to see how it would compare
-
-#to_do run tomorrow with actual data and see whether it works
 preds <- models %>% map(~ posterior_predict(.x))
 training_rmses <- preds %>% map(~ rmse(y = xdata$mlu, yrep = .x))
 
