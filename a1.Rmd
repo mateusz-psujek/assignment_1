@@ -504,7 +504,7 @@ map(.x = t_vs_est %>% group_split(term),
 t_vs_est(f_m)
 ```
 ```{r}
-t_vs_est(model)
+t_vs_est(fg_m)
 ```
 ##### individual effects
 
