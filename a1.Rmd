@@ -461,36 +461,32 @@ hypothesis(fg_m, 'diagnosistd:visit - diagnosisasd:visit > 0')
 ```{r}
 # comparing model estimates with the true generative process values
 
-head(p)
-
-model <- f_m
 t_vs_est <- function(model){
 est <- rbind(model %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
              model %>% gather_draws(`sd_.*`, regex = T) %>% mean_qi) %>% 
-  select(!c(.variable, .point, .interval)) %>% 
+  select(!c(.point, .interval)) %>% 
   rename_with(.cols = everything(), ~ paste0("est_", .x) %>% str_remove_all(fixed('.'))) %>% 
   mutate(across(where(is.numeric), exp))
-# you have to change this i guess (look Riccardo's feedback)
 
 if (nrow(est) == 6){
   est <- rbind(est, est %>% slice(c(5,6)))
-  } else
+  } else{
     est <- est
-
-t_value <-  c(1.5, 0.4, 1.5, 0.6, 0.5, 0.4, 0.5, 0.2)
+  }
 
 t_vs_est <- tibble(term = 
                     map2_chr(.x = rep(c('mu','sd'), each = 4),
-                           .y = rep(c('intercept', 'slope'), times = 4),
+                           .y = c(rep(c('intercept', 'slope'), times = 2), 
+                                  rep(c('intercept', 'slope'), each = 2)),
                            .f = ~ paste0(.x, '_', .y)),
-                   diagnosis = rep(c('asd', 'asd', 'td', 'td'), times = 2),
-                   t_value <-  c(1.5, 0.4, 1.5, 0.6, 0.5, 0.4, 0.5, 0.2),
+                   diagnosis = c('asd', 'asd', 'td', 'td', 'asd', 'td', 'asd', 'td'),
+                   t_value = c(1.5, 0.4, 1.5, 0.6, 0.5, 0.4, 0.5, 0.2),
                    est)
 
 map(.x = t_vs_est %>% group_split(term),
     .f = ~ 
       ggplot(.x, aes(y = est_value, x = diagnosis, color = diagnosis)) +
-        geom_hline(aes(yintercept = t_value, color = diagnosis)) +
+        geom_hline(aes(yintercept = t_value, color = diagnosis), linetype = 'dashed') +
         geom_point(size = 3) +
         geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
         labs(title = paste0("'", .x$term, "'"),
@@ -508,7 +504,7 @@ map(.x = t_vs_est %>% group_split(term),
 t_vs_est(f_m)
 ```
 ```{r}
-t_vs_est(fg_m)
+t_vs_est(model)
 ```
 ##### individual effects
 
@@ -570,7 +566,7 @@ update_fg <- function(n, seed){
 
 
 ```{r}
-power_data <- expand_grid(N = seq(10, 110, by = 20), seed = 1:100) %>% 
+power_data <- expand_grid(N = seq(10, 110, by = 20), seed = 1:50) %>% 
    mutate(dfs = update_fg(seed, N)) %>% 
    unnest(dfs)
 
@@ -808,28 +804,23 @@ hypothesis(model, 'diagnosistd:visit - diagnosisasd:visit > 0')
 
 est <- rbind(model %>% gather_draws(`b_.*`, regex = T) %>% mean_qi,
              model %>% gather_draws(`sd_.*`, regex = T) %>% mean_qi) %>% 
-  select(!c(.variable, .point, .interval)) %>% 
+  select(!c(.point, .interval)) %>% 
   rename_with(.cols = everything(), ~ paste0("est_", .x) %>% str_remove_all(fixed('.'))) %>% 
   mutate(across(where(is.numeric), exp))
 
 
-if (nrow(est) == 6){
-  est <- rbind(est, est %>% slice(c(5,6)))
-  } else
-    est <- est
+est <- tibble(term =
+         map2_chr(.x = rep(c('mu','sd'), each = 4),
+                  .y = c(rep(c('intercept', 'slope'), times = 2), 
+                         rep(c('intercept', 'slope'), each = 2)),
+                  .f = ~ paste0(.x, '_', .y)),
+       diagnosis = c('asd', 'asd', 'td', 'td', 'asd', 'td', 'asd', 'td'),
+       est)
 
-t_vs_est <- tibble(term = 
-                    map2_chr(.x = rep(c('mu','sd'), each = 4),
-                           .y = rep(c('intercept', 'slope'), times = 4),
-                           .f = ~ paste0(.x, '_', .y)),
-                   diagnosis = rep(c('asd', 'asd', 'td', 'td'), times = 2),
-                   t_value,
-                   est)
-
-map(.x = t_vs_est %>% group_split(term),
+map(.x = est %>% group_split(term),
     .f = ~ 
       ggplot(.x, aes(y = est_value, x = diagnosis, color = diagnosis)) +
-        geom_hline(aes(yintercept = t_value, color = diagnosis)) +
+        geom_hline(yintercept = 0, color = 'darkred', linetype = 'dashed') +
         geom_point(size = 3) +
         geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
         labs(title = paste0("'", .x$term, "'"),
@@ -839,7 +830,7 @@ map(.x = t_vs_est %>% group_split(term),
         theme_bw() +
         theme(axis.text.x = element_blank())
     )
-}
+
 ```
 ### Individual differences
 ```{r}
@@ -848,6 +839,9 @@ map(.x = t_vs_est %>% group_split(term),
 
 ## Including additional models
 ```{r}
+m_baseline <- model
+rm(model)
+
 #only environmental factors
 m_env <- bf(mlu ~ 0 + diagnosis + visit:Diagnosis + socialization:diagnosis + (1 + visit | id))
 
@@ -897,10 +891,6 @@ models[-1] %>%
 models[-1] %>% map( ~ pp_update_plot(.x))
 ```
 ###### Model comparison
-```{r}
-models <- models[1] # to_do!!! remove this one after trying it
-```
-
 ```{r}
 kfs <- models %>% map( ~ kfold(.x, folds = 'stratified', group = 'id', K = 5, save_fits = T))
 
