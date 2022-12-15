@@ -56,7 +56,7 @@ BONUS questions for Part 1: what if the difference between ASD and TD was 0? how
 
 ##### Plotting the real MLU data to see how real MLU data looks more or less
 ```{r}
-real_data <- read_csv('a0/a0_data.csv')
+real_data <- read_csv('a0_data.csv')
 
 gg_real_mlu <- ggplot(real_data, aes(x = chi_mlu, fill = diagnosis))+
   geom_density(alpha = 0.7)+
@@ -113,7 +113,7 @@ simulate_data <- function(n = 200,
   set.seed = seed
   
     tibble(id = 1:n,
-         diagnosis = rep(c('asd', 'td'), times = n/2)
+         diagnosis = rep(c('asd', 'td'), n/2)
          ) %>% 
     expand_grid(visit = 1:6) %>% 
     group_by(id) %>% 
@@ -240,6 +240,9 @@ priors <- c(
   prior(normal(0, 0.4), class = sd, coef = Intercept, group = id),
   prior(normal(0, 0.1), class = sd, coef = visit, group = id)
         )
+
+
+
 ```
 
 ```{r}
@@ -509,7 +512,7 @@ ind_t_vs_est <- function(model){
 
 t_value <- sim_data %>% ungroup %>% filter(visit == 1)
 t_value <- rbind(
-    t_value %>% select(ind_int) %>% rename('t_value' = ind_int),
+    t_value %>% select(ind_intercept) %>% rename('t_value' = ind_intercept),
     t_value %>% select(ind_slope) %>% rename('t_value' = ind_slope)
   )
 
@@ -524,7 +527,7 @@ ind_t_vs_est <- model %>% recover_types(sim_data) %>% gather_draws(r_id[id, term
 
 map(.x = ind_t_vs_est %>% group_split(term),
     .f = ~
-      ggplot(.x, aes(x = as.numeric(id), y = est_value, color = accuracy)) +
+      ggplot(.x, aes(x = as.factor(id), y = est_value, color = accuracy)) +
         geom_point(aes(shape = diagnosis), size = 3) +
         geom_pointrange(aes(ymin = est_lower, ymax = est_upper)) +
         scale_color_manual(values=c('green', 'red')) + 
@@ -553,17 +556,20 @@ update_fg <- function(n, seed){
     gather_draws(c(`b_diagnosisasd:visit`,`b_diagnosistd:visit`)) %>%
     mean_qi(.width = 0.95) %>% 
     rename_with(.cols = everything(), ~ str_remove_all(.x, fixed('.'))) %>% 
-    mutate(across(where(is.numeric), function(.x){ .x= lead(.x) - .x}),
+    mutate(across(where(is.numeric), function(.x){ .x = lead(.x) - .x}),
            variable = 'b_diff') %>% 
+    select(-width) %>% 
     na.omit
 }
 ```
 
 
 ```{r}
-power_data <- expand_grid(N = seq(10, 110, by = 20), seed = 1:50) %>% 
-   mutate(dfs = update_fg(seed, N)) %>% 
+power_data <- expand_grid(N = seq(30, 110, by = 20), seed = 1:50) %>%
+   rowwise %>% 
+   mutate(dfs = update_fg(N, seed)) %>% 
    unnest(dfs)
+
 
 write_rds(power_data, 'rdata/power_data.Rds')
 save.image('rdata/a1_part1.Rdata') 
@@ -575,7 +581,6 @@ power_data %>%
           geom_hline(yintercept = c(0, 0.2), color = "white") +
           geom_pointrange(fatten = 1/2) +
           labs(title = "Difference of mean slope parameters between the two groups",
-               subtitle = paste0("N = ",  power_data$N),
                x = "seed (i.e., simulation index)",
                y = "value")+
           facet_grid(~ N)
@@ -588,7 +593,7 @@ power_data %>%
     p_signif = mean(signif),
     se = sqrt(p_signif*(1 - p_signif) / n())
          ) %>% 
-  mutate(lower.95 = ymin = p_signif - 1.96*se, 
+  mutate(lower.95 = p_signif - 1.96*se, 
          upper.95 = p_signif + 1.96*se) %>% 
   ggplot(aes(x = N, y = p_signif, ymin = lower.95, ymax = upper.95)) +
     geom_pointrange() +
@@ -599,28 +604,30 @@ power_data %>%
 ##### Accuracy in parameter estimation (precision) approach :
 
 ```{r}
-power_data %>% 
-  group_by(N, seed) %>% 
+power_data <- power_data %>% 
+  group_by(N, seed) %>%
   mutate(ci_width = upper - lower) %>% 
-  ungroup %>% 
-  ggplot(aes(x = ci_width)) %>% 
+  ungroup 
+
+power_data %>% 
+  ggplot(aes(x = ci_width)) + 
   geom_bar(binwidth = 0.1)
 
 
-powerdata%>% 
+power_data %>% 
   mutate(check = ifelse(ci_width < 0.7, 1, 0)) %>% 
   summarise(`proportion below 0.7` = mean(check),
             `average width` = mean(ci_width))
 
 
 power_data %>%
-  mutate(precise = if_else(width < 0.7, 1, 0)) %>% 
+  mutate(precise = if_else(ci_width < 0.7, 1, 0)) %>% 
   group_by(N) %>% 
   summarise(
     p_precise = mean(precise),
     se = sqrt(p_precise*(1 - p_precise) / n())
          ) %>% 
-  mutate(lower.95 = ymin = p_precise - 1.96*se, 
+  mutate(lower.95 = p_precise - 1.96*se, 
          upper.95 = p_precise + 1.96*se) %>% 
   ggplot(aes(x = N, y = p_precise, ymin = lower.95, ymax = upper.95)) +
     geom_pointrange() +
@@ -865,19 +872,16 @@ data %>%
 
 ## Including additional models
 ```{r}
-m_baseline <- model
-rm(model)
-
 #only environmental factors
 m_env <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + socialization:diagnosis + (1 + visit | id))
 
 #only cognitive
-m_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + verblaiq:diagnosis + nonverbalis:diagnosis + (1 + visit | id))
+m_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + verbaliq1:diagnosis + nonverbaliq1:diagnosis + (1 + visit | id))
 
 #environmental and cognitive factors
-m_env_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + nonverbal + socialization + (1 + visit | id))
+m_env_cog <- bf(mlu ~ 0 + diagnosis + visit:diagnosis + nonverbaliq1+ socialization + (1 + visit | id))
 
-formulas <- list(m_baseline = m_baseline, m_env = m_env, m_cog = m_cog, m_env_cog = m_env_cog)
+formulas <- list(m_env = m_env, m_cog = m_cog, m_env_cog = m_env_cog)
 ```
 
 
@@ -898,6 +902,11 @@ models <- formulas %>%
         )
     )
   )
+m_baseline <- model
+rm(model)
+
+models <- c(list(m_baseline), models)
+
 ```
 ###### convergance checks
 ```{r}
